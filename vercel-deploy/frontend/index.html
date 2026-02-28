@@ -5655,7 +5655,7 @@
         </div>
     </div>
 
-    <!-- عند وجود جلسة محفوظة: إخفاء شاشة الدخول وعرض "جاري التحميل" حتى انتهاء استعادة الجلسة (حد أقصى 5 ثوانٍ) -->
+    <!-- عند وجود جلسة محفوظة: إخفاء شاشة الدخول وعرض "جاري التحميل" حتى انتهاء استعادة الجلسة (حد أقصى 2 ثانية) -->
     <script>
         (function() {
             try {
@@ -5675,11 +5675,11 @@
                     }
                     setTimeout(function() {
                         var ov = document.getElementById('hse-session-restore-overlay');
-                        if (ov && ov.parentNode) {
-                            ov.parentNode.removeChild(ov);
-                            if (loginEl) loginEl.style.display = '';
-                        }
-                    }, 5000);
+                        if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+                        var mainApp = document.getElementById('main-app');
+                        var appAlreadyShown = mainApp && mainApp.style && mainApp.style.display === 'flex';
+                        if (!appAlreadyShown && loginEl) loginEl.style.display = '';
+                    }, 2000);
                 }
             } catch (e) {}
         })();
