@@ -5655,7 +5655,7 @@
         </div>
     </div>
 
-    <!-- عند وجود جلسة محفوظة: إخفاء شاشة الدخول وعرض "جاري التحميل" حتى انتهاء استعادة الجلسة -->
+    <!-- عند وجود جلسة محفوظة: إخفاء شاشة الدخول وعرض "جاري التحميل" حتى انتهاء استعادة الجلسة (حد أقصى 5 ثوانٍ) -->
     <script>
         (function() {
             try {
@@ -5673,6 +5673,13 @@
                         document.head.appendChild(style);
                         document.body.appendChild(wrap);
                     }
+                    setTimeout(function() {
+                        var ov = document.getElementById('hse-session-restore-overlay');
+                        if (ov && ov.parentNode) {
+                            ov.parentNode.removeChild(ov);
+                            if (loginEl) loginEl.style.display = '';
+                        }
+                    }, 5000);
                 }
             } catch (e) {}
         })();
