@@ -15,7 +15,7 @@
 })();
 
 // Bump cache version to force clients to pick up latest JS/CSS updates
-const CACHE_VERSION = 'hse-app-v1.0.5';
+const CACHE_VERSION = 'hse-app-v1.0.6';
 const CACHE_NAME = `hse-cache-${CACHE_VERSION}`;
 
 // تحديد المسار الأساسي بناءً على موقع Service Worker
