@@ -2196,9 +2196,14 @@ window.UI = {
             } catch (e) { /* تجاهل */ }
         }
 
-        const postLoginItems = this._getPostLoginItemsForDisplay();
-        // عند تنشيط الصفحة أو إعادة التحميل: عدم عرض السياسة إذا كان المستخدم قد شاهدها مسبقاً
-        const shouldShowPolicy = postLoginItems.length > 0 && !this._currentUserHasSeenPostLoginPolicy();
+        // عرض السياسة: أول دخول للمستخدم، أو إذا مرّ أكثر من 10 أيام منذ آخر مشاهدة (تكرار كل 10 أيام)
+        const shouldShowPolicyByTime = !this._currentUserHasSeenPostLoginPolicy();
+        let postLoginItems = this._getPostLoginItemsForDisplay();
+        // إذا مطلوب عرض السياسة ولا توجد عناصر من الإعدادات، نعرض عنصراً افتراضياً واحداً
+        if (shouldShowPolicyByTime && (!postLoginItems || postLoginItems.length === 0)) {
+            postLoginItems = [{ title: 'تعليمات الاستخدام', body: 'مرحباً بك. يرجى الاطلاع على تعليمات وسياسات الشركة والالتزام بها.', active: true, order: 0, durationSeconds: 10 }];
+        }
+        const shouldShowPolicy = postLoginItems.length > 0 && shouldShowPolicyByTime;
 
         // التطبيق مُظهِر مسبقاً أعلاه؛ إخفاء المحتوى مؤقتاً إذا سنعرض السياسة
         if (mainApp) mainApp.style.display = shouldShowPolicy ? 'none' : 'flex';
@@ -2276,23 +2281,32 @@ window.UI = {
         } catch (e) { return []; }
     },
 
-    /** هل المستخدم الحالي قد شاهد سياسة/تعليمات ما بعد الدخول مسبقاً (مرة واحدة فقط لكل مستخدم) */
+    /** مدة صلاحية "شاهد السياسة" بالأيام — بعدها نعرض السياسة مرة أخرى (كل 10 أيام) */
+    _postLoginPolicyValidityDays: 10,
+
+    /** هل المستخدم الحالي قد شاهد سياسة ما بعد الدخول ضمن المدة المحددة (أول دخول أو أكثر من 10 أيام = نعرض السياسة) */
     _currentUserHasSeenPostLoginPolicy() {
         try {
             const user = AppState.currentUser;
             if (!user) return true;
-            const validSeen = (v) => {
-                const s = String(v || '').trim().toLowerCase();
-                return s !== '' && s !== 'undefined' && s !== 'null';
+            const daysMs = (this._postLoginPolicyValidityDays || 10) * 24 * 60 * 60 * 1000;
+            const now = Date.now();
+            const getSeenAt = () => {
+                const v = user.postLoginPolicySeenAt;
+                if (v && String(v).trim() && String(v).toLowerCase() !== 'undefined' && String(v).toLowerCase() !== 'null') return new Date(v).getTime();
+                const users = AppState.appData?.users;
+                if (Array.isArray(users)) {
+                    const email = (user.email || '').toLowerCase().trim();
+                    const found = users.find(u => (u && (String(u.email || '').toLowerCase().trim() === email || String(u.id || '') === String(user.id || ''))));
+                    const fv = found && found.postLoginPolicySeenAt;
+                    if (fv && String(fv).trim()) return new Date(fv).getTime();
+                }
+                return 0;
             };
-            if (validSeen(user.postLoginPolicySeenAt)) return true;
-            const users = AppState.appData?.users;
-            if (Array.isArray(users)) {
-                const email = (user.email || '').toLowerCase().trim();
-                const found = users.find(u => (u && (String(u.email || '').toLowerCase().trim() === email || String(u.id || '') === String(user.id || ''))));
-                if (found && validSeen(found.postLoginPolicySeenAt)) return true;
-            }
-            return false;
+            const seenAt = getSeenAt();
+            if (!seenAt) return false; // أول مرة — نعرض السياسة
+            if (now - seenAt >= daysMs) return false; // مرّ أكثر من 10 أيام — نعرض السياسة مرة أخرى
+            return true; // شاهد خلال آخر 10 أيام — لا نعرض
         } catch (e) { return false; }
     },
 
@@ -2476,11 +2490,12 @@ window.UI = {
             if (!currentVersion) return;
             const storageKey = 'hse_last_seen_version';
             const lastSeen = (typeof localStorage !== 'undefined' && localStorage.getItem(storageKey)) ? String(localStorage.getItem(storageKey)).trim() : '';
-            // للمستخدم الجديد: حفظ الإصدار الحالي دون عرض رسالة (ليُقارن عند التحديث القادم)
+            // المستخدم الجديد (لم يسجّل إصداراً سابقاً): نحفظ الإصدار فقط ولا نعرض رسالة التحديث
             if (!lastSeen) {
                 try { localStorage.setItem(storageKey, currentVersion); } catch (e) {}
                 return;
             }
+            // نفس الإصدار دون تغيير — لا نعرض
             if (lastSeen === currentVersion) return;
 
             const message = (AppState.updateMessage && String(AppState.updateMessage).trim()) || 'تم تحسين التطبيق وإضافة تحديثات جديدة. شكراً لاستخدامكم.';
