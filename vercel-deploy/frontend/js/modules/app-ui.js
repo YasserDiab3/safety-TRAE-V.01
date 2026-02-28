@@ -2145,14 +2145,23 @@ window.UI = {
         const restoreOverlay = document.getElementById('hse-session-restore-overlay');
         if (restoreOverlay && restoreOverlay.parentNode) restoreOverlay.remove();
 
+        const loginScreen = document.getElementById('login-screen');
+        const mainApp = document.getElementById('main-app');
+
+        // فوراً: إخفاء شاشة الدخول وإظهار التطبيق حتى لا يظهر الدخول عند أي timeout (مثل 2 ثانية)
+        if (loginScreen) {
+            loginScreen.style.display = 'none';
+            loginScreen.classList.remove('active', 'show');
+        }
+        if (mainApp) mainApp.style.display = 'flex';
+        document.body.classList.add('app-active');
+        try { window._hseAppVisible = true; } catch (e) {}
+
         // التحقق من وجود مستخدم مسجل دخول
         if (!AppState.currentUser) {
             if (AppState.debugMode) Utils.safeLog('⚠️ لا يوجد مستخدم مسجل دخول - لا يمكن عرض التطبيق');
             return;
         }
-
-        const loginScreen = document.getElementById('login-screen');
-        const mainApp = document.getElementById('main-app');
 
         // تحميل إعدادات الشركة أولاً (شاشة الدخول تبقى ظاهرة) ثم عرض السياسة مباشرة دون شاشة تحضيرية
         if (!AppState.companySettings || typeof AppState.companySettings !== 'object') {
@@ -2177,13 +2186,8 @@ window.UI = {
         // عند تنشيط الصفحة أو إعادة التحميل: عدم عرض السياسة إذا كان المستخدم قد شاهدها مسبقاً
         const shouldShowPolicy = postLoginItems.length > 0 && !this._currentUserHasSeenPostLoginPolicy();
 
-        // الآن إخفاء شاشة الدخول وتهيئة العرض ثم عرض السياسة مباشرة (بدون شاشة تحضيرية داكنة)
-        if (loginScreen) {
-            loginScreen.style.display = 'none';
-            loginScreen.classList.remove('active', 'show');
-        }
-        document.body.classList.add('app-active');
-        if (mainApp) mainApp.style.display = 'none';
+        // التطبيق مُظهِر مسبقاً أعلاه؛ إخفاء المحتوى مؤقتاً إذا سنعرض السياسة
+        if (mainApp) mainApp.style.display = shouldShowPolicy ? 'none' : 'flex';
 
         if (shouldShowPolicy) {
             document.documentElement.classList.add('hse-post-login-overlay-active');
