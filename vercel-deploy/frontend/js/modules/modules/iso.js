@@ -96,7 +96,17 @@ const ISO = {
                 try {
                     const contentArea = document.getElementById('iso-content');
                     if (!contentArea) return;
-                    
+
+                    // تبويب مركز التكويد: عرض الهيكل فوراً ثم جلب البيانات في الخلفية لتقليل التأخير
+                    if (this.currentTab === 'coding-center') {
+                        contentArea.innerHTML = await this.renderCodingCenter({ skipFetch: true });
+                        this.renderCodingCenter().then(html => {
+                            const area = document.getElementById('iso-content');
+                            if (area && this.currentTab === 'coding-center') area.innerHTML = html;
+                        }).catch(() => {});
+                        return;
+                    }
+
                     const content = await this.renderContent().catch(error => {
                         Utils.safeWarn('⚠️ خطأ في تحميل المحتوى:', error);
                         return `
@@ -2010,7 +2020,10 @@ const ISO = {
     },
 
     // ===== مركز التكويد والإصدار (Document Coding & Issuing Center) =====
-    async renderCodingCenter() {
+    async renderCodingCenter(opts = {}) {
+        const skipFetch = opts && opts.skipFetch === true;
+        const showLoadingIndicator = skipFetch;
+
         // التحقق من الصلاحيات - فقط المدير يمكنه الوصول
         const currentUser = AppState.currentUser;
         if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'مدير')) {
@@ -2027,40 +2040,47 @@ const ISO = {
             `;
         }
 
-        // جلب البيانات من Google Sheets (بالتوازي مع مهلة أقصى 20 ثانية)
         let documentCodes = [];
         let documentVersions = [];
-        const LOAD_TIMEOUT_MS = 20000;
 
-        try {
-            Loading.show();
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('TIMEOUT')), LOAD_TIMEOUT_MS)
-            );
-            const fetchPromise = Promise.all([
-                GoogleIntegration.fetchData('getDocumentCodes', {}).catch(() => ({ success: false, data: [] })),
-                GoogleIntegration.fetchData('getDocumentVersions', { documentCodeId: null }).catch(() => ({ success: false, data: [] }))
-            ]);
-            const [codesResult, versionsResult] = await Promise.race([fetchPromise, timeoutPromise]);
-            if (codesResult && codesResult.success && codesResult.data) {
-                documentCodes = codesResult.data;
+        if (!skipFetch) {
+            const LOAD_TIMEOUT_MS = 20000;
+            try {
+                Loading.show();
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('TIMEOUT')), LOAD_TIMEOUT_MS)
+                );
+                const fetchPromise = Promise.all([
+                    GoogleIntegration.fetchData('getDocumentCodes', {}).catch(() => ({ success: false, data: [] })),
+                    GoogleIntegration.fetchData('getDocumentVersions', { documentCodeId: null }).catch(() => ({ success: false, data: [] }))
+                ]);
+                const [codesResult, versionsResult] = await Promise.race([fetchPromise, timeoutPromise]);
+                if (codesResult && codesResult.success && codesResult.data) {
+                    documentCodes = codesResult.data;
+                }
+                if (versionsResult && versionsResult.success && versionsResult.data) {
+                    documentVersions = versionsResult.data;
+                }
+            } catch (error) {
+                if (error && error.message === 'TIMEOUT') {
+                    Utils.safeError('مركز التكويد والإصدار: انتهت مهلة التحميل. جرب تحديث الصفحة.');
+                    if (typeof Notification !== 'undefined') Notification.warning('انتهت مهلة تحميل البيانات. يمكنك تحديث الصفحة أو المحاولة لاحقاً.');
+                } else {
+                    Utils.safeError('Error loading coding center data:', error);
+                }
+            } finally {
+                Loading.hide();
             }
-            if (versionsResult && versionsResult.success && versionsResult.data) {
-                documentVersions = versionsResult.data;
-            }
-        } catch (error) {
-            if (error && error.message === 'TIMEOUT') {
-                Utils.safeError('مركز التكويد والإصدار: انتهت مهلة التحميل. جرب تحديث الصفحة.');
-                if (typeof Notification !== 'undefined') Notification.warning('انتهت مهلة تحميل البيانات. يمكنك تحديث الصفحة أو المحاولة لاحقاً.');
-            } else {
-                Utils.safeError('Error loading coding center data:', error);
-            }
-        } finally {
-            Loading.hide();
         }
 
         return `
             <div class="space-y-6">
+                ${showLoadingIndicator ? `
+                <div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 flex items-center gap-2">
+                    <i class="fas fa-spinner fa-spin text-blue-600"></i>
+                    <span class="text-sm text-blue-800">جاري تحميل البيانات...</span>
+                </div>
+                ` : ''}
                 <!-- إحصائيات سريعة + زر إعادة التحميل -->
                 <div class="flex flex-wrap items-center justify-between gap-4">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
