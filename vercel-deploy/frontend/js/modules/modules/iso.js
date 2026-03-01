@@ -2061,20 +2061,26 @@ const ISO = {
 
         return `
             <div class="space-y-6">
-                <!-- إحصائيات سريعة -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-                        <div class="text-3xl font-bold text-blue-600 mb-2">${documentCodes.length}</div>
-                        <div class="text-sm text-gray-700 font-semibold">أكواد المستندات</div>
+                <!-- إحصائيات سريعة + زر إعادة التحميل -->
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                            <div class="text-3xl font-bold text-blue-600 mb-2">${documentCodes.length}</div>
+                            <div class="text-sm text-gray-700 font-semibold">أكواد المستندات</div>
+                        </div>
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                            <div class="text-3xl font-bold text-green-600 mb-2">${documentVersions.length}</div>
+                            <div class="text-sm text-gray-700 font-semibold">إصدارات المستندات</div>
+                        </div>
+                        <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
+                            <div class="text-3xl font-bold text-purple-600 mb-2">${documentVersions.filter(v => v.isActive === true || v.isActive === 'true').length}</div>
+                            <div class="text-sm text-gray-700 font-semibold">إصدارات نشطة</div>
+                        </div>
                     </div>
-                    <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                        <div class="text-3xl font-bold text-green-600 mb-2">${documentVersions.length}</div>
-                        <div class="text-sm text-gray-700 font-semibold">إصدارات المستندات</div>
-                    </div>
-                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
-                        <div class="text-3xl font-bold text-purple-600 mb-2">${documentVersions.filter(v => v.isActive === true || v.isActive === 'true').length}</div>
-                        <div class="text-sm text-gray-700 font-semibold">إصدارات نشطة</div>
-                    </div>
+                    <button type="button" onclick="ISO.reloadCodingCenter()" class="btn-secondary flex items-center gap-2 shrink-0" title="إعادة تحميل البيانات">
+                        <i class="fas fa-sync-alt"></i>
+                        <span>إعادة تحميل</span>
+                    </button>
                 </div>
 
                 <!-- قسم إدارة التكويد -->
@@ -2215,6 +2221,26 @@ const ISO = {
                 </div>
             </div>
         `;
+    },
+
+    /**
+     * إعادة تحميل محتوى مركز التكويد والإصدار فقط (بدون إعادة تحميل كامل الموديول)
+     */
+    async reloadCodingCenter() {
+        const contentArea = document.getElementById('iso-content');
+        if (!contentArea) return;
+        try {
+            Loading.show();
+            this.currentTab = 'coding-center';
+            const content = await this.renderCodingCenter();
+            contentArea.innerHTML = content;
+            if (typeof Notification !== 'undefined') Notification.success('تم تحديث البيانات');
+        } catch (error) {
+            Utils.safeError('Error reloading coding center:', error);
+            if (typeof Notification !== 'undefined') Notification.error('فشل إعادة التحميل: ' + (error && error.message ? error.message : ''));
+        } finally {
+            Loading.hide();
+        }
     },
 
     async showDocumentCodeForm(data = null) {

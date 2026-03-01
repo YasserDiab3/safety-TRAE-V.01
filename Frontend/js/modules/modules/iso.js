@@ -2223,6 +2223,26 @@ const ISO = {
         `;
     },
 
+    /**
+     * إعادة تحميل محتوى مركز التكويد والإصدار فقط (بدون إعادة تحميل كامل الموديول)
+     */
+    async reloadCodingCenter() {
+        const contentArea = document.getElementById('iso-content');
+        if (!contentArea) return;
+        try {
+            Loading.show();
+            this.currentTab = 'coding-center';
+            const content = await this.renderCodingCenter();
+            contentArea.innerHTML = content;
+            if (typeof Notification !== 'undefined') Notification.success('تم تحديث البيانات');
+        } catch (error) {
+            Utils.safeError('Error reloading coding center:', error);
+            if (typeof Notification !== 'undefined') Notification.error('فشل إعادة التحميل: ' + (error && error.message ? error.message : ''));
+        } finally {
+            Loading.hide();
+        }
+    },
+
     async showDocumentCodeForm(data = null) {
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
