@@ -5720,31 +5720,6 @@
                         <i class="fas fa-bell" style="pointer-events: none;"></i>
                         <span id="notifications-badge" class="notifications-badge" style="display: none; pointer-events: none;">0</span>
                     </button>
-                    <!-- Script لربط الزر مباشرة -->
-                    <script>
-                        (function() {
-                            var btn = document.getElementById('notifications-btn');
-                            if (btn) {
-                                btn.onclick = function(e) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    console.log('🔔 CLICK on notifications-btn!');
-                                    alert('تم الضغط على زر الإشعارات!');
-                                    var dd = document.getElementById('notifications-dropdown');
-                                    if (dd) {
-                                        if (dd.style.display === 'flex') {
-                                            dd.style.display = 'none';
-                                        } else {
-                                            dd.style.cssText = 'display:flex!important;position:fixed!important;z-index:99999!important;top:100px!important;left:50%!important;transform:translateX(-50%)!important;width:380px!important;max-width:90vw!important;background:#fff!important;border-radius:12px!important;box-shadow:0 8px 32px rgba(0,0,0,0.3)!important;flex-direction:column!important;border:1px solid #ddd!important;';
-                                            var em = document.getElementById('notifications-empty');
-                                            if (em) em.style.display = 'flex';
-                                        }
-                                    }
-                                };
-                                console.log('✅ notifications-btn onclick bound!');
-                            }
-                        })();
-                    </script>
                     <!-- Notifications Dropdown Panel -->
                     <div id="notifications-dropdown" class="notifications-dropdown" style="display: none;">
                         <div class="notifications-dropdown-header">

@@ -6217,12 +6217,30 @@ window.UI = {
         // إغلاق dropdown عند النقر خارجها
         // تنظيف الـ listener القديم إذا كان موجوداً
         if (self._notificationsClickHandler) {
-            document.removeEventListener('click', self._notificationsClickHandler, false);
+            document.removeEventListener('click', self._notificationsClickHandler, true);
             self._notificationsClickHandler = null;
         }
         
         self._notificationsClickHandler = (e) => {
             try {
+                // إذا كان النقر على أحد أزرار الإشعارات: فتح/إغلاق القائمة (تفويض حدث - يعمل حتى لو لم يُربط الزر مباشرة)
+                if (e && e.target) {
+                    const notifBtn = e.target.closest('#notifications-btn, #mobile-notifications-btn, #header-notifications-btn');
+                    if (notifBtn) {
+                        const dropdownId = notifBtn.id === 'notifications-btn' ? 'notifications-dropdown' :
+                            notifBtn.id === 'mobile-notifications-btn' ? 'mobile-notifications-dropdown' : 'header-notifications-dropdown';
+                        const listId = dropdownId.replace('-dropdown', '-list');
+                        const emptyId = dropdownId.replace('-dropdown', '-empty');
+                        const closeBtnId = 'close-' + dropdownId;
+                        const uiObj = self || window.UI;
+                        if (uiObj && typeof uiObj.toggleNotificationsDropdown === 'function') {
+                            uiObj.toggleNotificationsDropdown(dropdownId, listId, emptyId, closeBtnId, notifBtn);
+                        }
+                        e.stopPropagation();
+                        return;
+                    }
+                }
+
                 // تجاهل الأخطاء من uploadmanager أو extensions
                 if (e && e.target) {
                     const targetStr = String(e.target.tagName || '').toLowerCase();
@@ -6269,8 +6287,8 @@ window.UI = {
             }
         };
         
-        // ✅ إصلاح: استخدام capture: false لضمان تنفيذ handler الزر أولاً
-        document.addEventListener('click', self._notificationsClickHandler, false);
+        // استخدام capture: true لمعالجة نقر زر الإشعارات أولاً (تفويض حدث) ثم إغلاق القائمة عند النقر خارجها
+        document.addEventListener('click', self._notificationsClickHandler, true);
 
         // تحديث عدد الإشعارات
         if (self && typeof self.updateNotificationsBadge === 'function') {
@@ -6319,7 +6337,7 @@ window.UI = {
             // تنظيف الـ click listener
             if (this._notificationsClickHandler) {
                 try {
-                    document.removeEventListener('click', this._notificationsClickHandler, false);
+                    document.removeEventListener('click', this._notificationsClickHandler, true);
                 } catch (err) {
                     Utils.safeWarn('⚠️ خطأ في إزالة document click listener:', err);
                 }
