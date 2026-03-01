@@ -750,6 +750,13 @@ function getSafetyTeamKPIs(memberId, period = null) {
             filteredData = filteredData.filter(function(kpi) {
                 return kpi.period === period;
             });
+        } else if (filteredData.length > 1) {
+            // عند عدم تحديد الفترة: ترتيب تنازلي حسب الفترة (الأحدث أولاً)
+            filteredData = filteredData.slice().sort(function(a, b) {
+                var pA = (a.period || '').toString();
+                var pB = (b.period || '').toString();
+                return pB.localeCompare(pA);
+            });
         }
         
         // إذا لم توجد بيانات محسوبة، نحسبها تلقائياً
@@ -963,8 +970,15 @@ function generateSafetyTeamPerformanceReport(memberId, startDate = null, endDate
             endDate = new Date();
         }
         
-        // حساب مؤشرات الأداء
-        const kpiResult = calculateSafetyTeamKPIs(memberId);
+        // حساب مؤشرات الأداء لفترة التقرير (شهر بداية startDate) لضمان اتساق البيانات
+        var reportPeriod = null;
+        if (startDate) {
+            var startObj = new Date(startDate);
+            var y = startObj.getFullYear();
+            var m = String(startObj.getMonth() + 1);
+            reportPeriod = y + '-' + (m.length === 1 ? '0' + m : m);
+        }
+        const kpiResult = calculateSafetyTeamKPIs(memberId, reportPeriod);
         var kpis = {};
         if (kpiResult.success) {
             kpis = kpiResult.data;
@@ -1820,9 +1834,10 @@ function calculateCustomKPI(memberId, kpi, period = null) {
             return 0;
         }
         
-        // فلترة السجلات حسب الفترة والعضو
+        // فلترة السجلات حسب الفترة والعضو (متوافقة مع حقول كل موديول)
+        var mid = String(memberId);
         var filteredRecords = records.filter(function(record) {
-            // التحقق من التاريخ
+            // التحقق من التاريخ حسب نوع السجل
             var recordDate = null;
             if (record.date) {
                 recordDate = new Date(record.date);
@@ -1832,6 +1847,8 @@ function calculateCustomKPI(memberId, kpi, period = null) {
                 recordDate = new Date(record.startDate);
             } else if (record.createdAt) {
                 recordDate = new Date(record.createdAt);
+            } else if (record.updatedAt) {
+                recordDate = new Date(record.updatedAt);
             }
             
             if (!recordDate) return false;
@@ -1839,28 +1856,28 @@ function calculateCustomKPI(memberId, kpi, period = null) {
             var recordPeriod = Utilities.formatDate(recordDate, Session.getScriptTimeZone(), 'yyyy-MM');
             if (recordPeriod !== period) return false;
             
-            // التحقق من العضو
-            if (record.memberId === memberId || 
-                record.reportedBy === memberId || 
-                record.responsible === memberId ||
-                record.inspectedBy === memberId ||
-                record.createdBy === memberId ||
-                (record.assignedTo && record.assignedTo === memberId)) {
-                return true;
-            }
+            // التحقق من العضو حسب الموديول (نفس منطق calculateSafetyTeamKPIs)
+            if (record.memberId === memberId || record.memberId == mid) return true;
+            if (record.reportedBy === memberId || String(record.reportedBy) === mid) return true;
+            if (record.responsible === memberId || String(record.responsible) === mid) return true;
+            if (record.assignedTo && (record.assignedTo === memberId || String(record.assignedTo) === mid)) return true;
+            if (record.inspector === memberId || String(record.inspector) === mid) return true;
+            if (record.supervisor === memberId || String(record.supervisor) === mid) return true;
+            if (record.trainer === memberId || String(record.trainer) === mid) return true;
+            if (record.createdBy === memberId || String(record.createdBy) === mid) return true;
+            if (record.inspectedBy === memberId || String(record.inspectedBy) === mid) return true;
+            if (record.approvedBy === memberId || String(record.approvedBy) === mid) return true;
             
-            // التحقق من قائمة المشاركين (للتدريب)
+            // المشاركون (للتدريب)
             if (record.participants) {
                 try {
                     var participants = typeof record.participants === 'string' ? 
                         JSON.parse(record.participants) : record.participants;
-                    if (Array.isArray(participants) && participants.indexOf(memberId) !== -1) {
+                    if (Array.isArray(participants) && participants.some(function(p) { return p != null && (String(p) === mid || (typeof p === 'object' && p.id != null && String(p.id) === mid)); })) {
                         return true;
                     }
                 } catch (e) {
-                    if (typeof record.participants === 'string' && record.participants.indexOf(memberId) !== -1) {
-                        return true;
-                    }
+                    if (typeof record.participants === 'string' && record.participants.indexOf(mid) !== -1) return true;
                 }
             }
             

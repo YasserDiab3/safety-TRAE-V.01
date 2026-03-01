@@ -2699,34 +2699,36 @@ const SafetyHealthManagement = {
     renderKPIs(kpi, container) {
         if (!kpi || !container) return;
         
-        // حساب مؤشرات الأداء بشكل صحيح
-        const inspectionsProgress = (kpi.targetInspections || 20) > 0 
-            ? Math.min(((kpi.inspectionsCount || 0) / (kpi.targetInspections || 20)) * 100, 100) 
-            : 0;
-        // حساب نسبة الإجراءات المغلقة بشكل صحيح (نسبة مئوية من الهدف)
-        const actionsProgress = (kpi.targetActionsClosure || 80);
-        const observationsProgress = (kpi.targetObservations || 15) > 0 
-            ? Math.min(((kpi.observationsCount || 0) / (kpi.targetObservations || 15)) * 100, 100) 
-            : 0;
-        const trainingsProgress = (kpi.targetTrainings || 2) > 0 
-            ? Math.min(((kpi.trainingsCount || 0) / (kpi.targetTrainings || 2)) * 100, 100) 
-            : 0;
-        const commitmentProgress = typeof kpi.commitmentRate === 'number' ? kpi.commitmentRate : 
-            (typeof kpi.commitmentRate === 'object' && kpi.commitmentRate !== null ? 0 : 
+        const targetInspections = kpi.targetInspections || 20;
+        const targetObservations = kpi.targetObservations || 15;
+        const targetTrainings = kpi.targetTrainings || 3;
+        const targetCommitment = kpi.targetCommitment || 95;
+        const targetActionsClosure = kpi.targetActionsClosure || 80;
+
+        const inspectionsProgress = targetInspections > 0
+            ? Math.min(((kpi.inspectionsCount || 0) / targetInspections) * 100, 100) : 0;
+        const closedCount = kpi.closedActionsCount || 0;
+        const actionsProgress = Math.min(100, (closedCount / 10) * 100);
+        const observationsProgress = targetObservations > 0
+            ? Math.min(((kpi.observationsCount || 0) / targetObservations) * 100, 100) : 0;
+        const trainingsProgress = targetTrainings > 0
+            ? Math.min(((kpi.trainingsCount || 0) / targetTrainings) * 100, 100) : 0;
+        const commitmentProgress = typeof kpi.commitmentRate === 'number' ? kpi.commitmentRate :
+            (typeof kpi.commitmentRate === 'object' && kpi.commitmentRate !== null ? 0 :
             (parseFloat(kpi.commitmentRate) || 0));
-        
+
         container.innerHTML = `
             <style>
-                #kpis-container .shm-kpi-h { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.25rem; border-radius: 14px; border: 1px solid #e5e7eb; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.04); transition: box-shadow 0.2s; min-height: auto; }
-                #kpis-container .shm-kpi-h:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08); }
-                #kpis-container .shm-kpi-h .shm-kpi-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; flex-shrink: 0; }
-                #kpis-container .shm-kpi-h .shm-kpi-body { flex: 1; min-width: 0; }
-                #kpis-container .shm-kpi-h .shm-kpi-label { font-size: 0.875rem; font-weight: 600; color: #374151; margin-bottom: 0.25rem; }
-                #kpis-container .shm-kpi-h .shm-kpi-value { font-size: 1.5rem; font-weight: 800; color: #1f2937; }
-                #kpis-container .shm-kpi-h .shm-kpi-target { font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem; }
-                #kpis-container .shm-kpi-h .shm-kpi-bar-wrap { width: 100px; flex-shrink: 0; height: 8px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
-                #kpis-container .shm-kpi-h .shm-kpi-bar-fill { height: 100%; border-radius: 999px; transition: width 0.3s; }
-                #kpis-container .shm-kpi-chart-row { padding: 1rem 0; border-bottom: 1px solid #e5e7eb; }
+                #kpis-container .shm-kpi-card { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; border-radius: 12px; border: 1px solid #e5e7eb; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: box-shadow 0.2s, border-color 0.2s; min-height: auto; }
+                #kpis-container .shm-kpi-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: #d1d5db; }
+                #kpis-container .shm-kpi-card .shm-kpi-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; }
+                #kpis-container .shm-kpi-card .shm-kpi-body { flex: 1; min-width: 0; }
+                #kpis-container .shm-kpi-card .shm-kpi-label { font-size: 0.8rem; font-weight: 600; color: #4b5563; margin-bottom: 0.15rem; }
+                #kpis-container .shm-kpi-card .shm-kpi-value { font-size: 1.35rem; font-weight: 700; color: #111827; line-height: 1.2; }
+                #kpis-container .shm-kpi-card .shm-kpi-target { font-size: 0.7rem; color: #6b7280; margin-top: 0.15rem; }
+                #kpis-container .shm-kpi-card .shm-kpi-bar-wrap { width: 72px; flex-shrink: 0; height: 6px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+                #kpis-container .shm-kpi-card .shm-kpi-bar-fill { height: 100%; border-radius: 999px; transition: width 0.3s; }
+                #kpis-container .shm-kpi-chart-row { padding: 0.75rem 0; border-bottom: 1px solid #f3f4f6; }
                 #kpis-container .shm-kpi-chart-row:last-child { border-bottom: none; }
             </style>
             <div class="mb-4 flex flex-wrap justify-end gap-2">
@@ -2735,90 +2737,93 @@ const SafetyHealthManagement = {
                     تعديل المؤشرات يدوياً
                 </button>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div class="shm-kpi-h">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-6">
+                <div class="shm-kpi-card">
                     <div class="shm-kpi-icon bg-blue-100 text-blue-600"><i class="fas fa-clipboard-check"></i></div>
                     <div class="shm-kpi-body">
                         <div class="shm-kpi-label">الجولات التفتيشية</div>
                         <div class="shm-kpi-value">${kpi.inspectionsCount || 0}</div>
-                        <div class="shm-kpi-target">الهدف: ${kpi.targetInspections || 20}</div>
+                        <div class="shm-kpi-target">الهدف: ${targetInspections}</div>
                     </div>
                     <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-blue-500" style="width: ${inspectionsProgress}%"></div></div>
                 </div>
-                <div class="shm-kpi-h">
+                <div class="shm-kpi-card">
                     <div class="shm-kpi-icon bg-emerald-100 text-emerald-600"><i class="fas fa-check-double"></i></div>
                     <div class="shm-kpi-body">
                         <div class="shm-kpi-label">الإجراءات المغلقة</div>
-                        <div class="shm-kpi-value">${kpi.closedActionsCount || 0}</div>
-                        <div class="shm-kpi-target">نسبة الإغلاق: ${kpi.targetActionsClosure || 80}%</div>
+                        <div class="shm-kpi-value">${closedCount}</div>
+                        <div class="shm-kpi-target">هدف النسبة: ${targetActionsClosure}%</div>
                     </div>
-                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-emerald-500" style="width: ${Math.min(actionsProgress, 100)}%"></div></div>
+                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-emerald-500" style="width: ${actionsProgress}%"></div></div>
                 </div>
-                <div class="shm-kpi-h">
+                <div class="shm-kpi-card">
                     <div class="shm-kpi-icon bg-purple-100 text-purple-600"><i class="fas fa-sticky-note"></i></div>
                     <div class="shm-kpi-body">
                         <div class="shm-kpi-label">الملاحظات</div>
                         <div class="shm-kpi-value">${kpi.observationsCount || 0}</div>
-                        <div class="shm-kpi-target">الهدف: ${kpi.targetObservations || 15}</div>
+                        <div class="shm-kpi-target">الهدف: ${targetObservations}</div>
                     </div>
                     <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-purple-500" style="width: ${observationsProgress}%"></div></div>
                 </div>
-                <div class="shm-kpi-h">
+                <div class="shm-kpi-card">
                     <div class="shm-kpi-icon bg-amber-100 text-amber-600"><i class="fas fa-chalkboard-teacher"></i></div>
                     <div class="shm-kpi-body">
                         <div class="shm-kpi-label">التدريبات</div>
                         <div class="shm-kpi-value">${kpi.trainingsCount || 0}</div>
-                        <div class="shm-kpi-target">الهدف: ${kpi.targetTrainings || 2}</div>
+                        <div class="shm-kpi-target">الهدف: ${targetTrainings}</div>
                     </div>
                     <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-amber-500" style="width: ${trainingsProgress}%"></div></div>
                 </div>
-                <div class="shm-kpi-h">
-                    <div class="shm-kpi-icon ${commitmentProgress >= 95 ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}"><i class="fas fa-percentage"></i></div>
+                <div class="shm-kpi-card">
+                    <div class="shm-kpi-icon ${commitmentProgress >= (targetCommitment || 95) ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}"><i class="fas fa-percentage"></i></div>
                     <div class="shm-kpi-body">
                         <div class="shm-kpi-label">نسبة الالتزام</div>
                         <div class="shm-kpi-value">${commitmentProgress.toFixed(1)}%</div>
-                        <div class="shm-kpi-target">الهدف: ${kpi.targetCommitment || 95}%</div>
+                        <div class="shm-kpi-target">الهدف: ${targetCommitment}%</div>
                     </div>
-                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill ${commitmentProgress >= 95 ? 'bg-emerald-500' : 'bg-amber-500'}" style="width: ${Math.min(commitmentProgress, 100)}%"></div></div>
+                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill ${commitmentProgress >= (targetCommitment || 95) ? 'bg-emerald-500' : 'bg-amber-500'}" style="width: ${Math.min(commitmentProgress, 100)}%"></div></div>
                 </div>
                 ${kpi.incidentsHandledCount !== undefined ? `
-                <div class="shm-kpi-h">
+                <div class="shm-kpi-card">
                     <div class="shm-kpi-icon bg-red-100 text-red-600"><i class="fas fa-exclamation-triangle"></i></div>
                     <div class="shm-kpi-body">
                         <div class="shm-kpi-label">الحوادث المعالجة</div>
                         <div class="shm-kpi-value">${kpi.incidentsHandledCount || 0}</div>
+                        <div class="shm-kpi-target">—</div>
                     </div>
                     <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-gray-200" style="width: 0%"></div></div>
                 </div>
                 ` : ''}
                 ${kpi.nearMissCount !== undefined ? `
-                <div class="shm-kpi-h">
+                <div class="shm-kpi-card">
                     <div class="shm-kpi-icon bg-amber-100 text-amber-600"><i class="fas fa-exclamation-circle"></i></div>
                     <div class="shm-kpi-body">
                         <div class="shm-kpi-label">Near Miss</div>
                         <div class="shm-kpi-value">${kpi.nearMissCount || 0}</div>
+                        <div class="shm-kpi-target">—</div>
                     </div>
                     <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-gray-200" style="width: 0%"></div></div>
                 </div>
                 ` : ''}
                 ${kpi.ptwCount !== undefined ? `
-                <div class="shm-kpi-h">
+                <div class="shm-kpi-card">
                     <div class="shm-kpi-icon bg-indigo-100 text-indigo-600"><i class="fas fa-file-signature"></i></div>
                     <div class="shm-kpi-body">
                         <div class="shm-kpi-label">PTW المعالجة</div>
                         <div class="shm-kpi-value">${kpi.ptwCount || 0}</div>
+                        <div class="shm-kpi-target">—</div>
                     </div>
                     <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-gray-200" style="width: 0%"></div></div>
                 </div>
                 ` : ''}
             </div>
-            <div class="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                <h3 class="font-semibold text-gray-800 mb-4 text-lg">مقارنة الأداء مع الأهداف</h3>
+            <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                <h3 class="font-semibold text-gray-800 mb-3 text-base">مقارنة الأداء مع الأهداف</h3>
                 <div class="space-y-0 divide-y divide-gray-100">
-                    ${this.renderKPIChartBar('الجولات التفتيشية', kpi.inspectionsCount || 0, kpi.targetInspections || 20)}
-                    ${this.renderKPIChartBar('الإجراءات المغلقة', kpi.closedActionsCount || 0, Math.max(kpi.closedActionsCount || 0, 10))}
-                    ${this.renderKPIChartBar('الملاحظات', kpi.observationsCount || 0, kpi.targetObservations || 15)}
-                    ${this.renderKPIChartBar('التدريبات', kpi.trainingsCount || 0, kpi.targetTrainings || 2)}
+                    ${this.renderKPIChartBar('الجولات التفتيشية', kpi.inspectionsCount || 0, targetInspections)}
+                    ${this.renderKPIChartBar('الإجراءات المغلقة', closedCount, Math.max(closedCount, 10))}
+                    ${this.renderKPIChartBar('الملاحظات', kpi.observationsCount || 0, targetObservations)}
+                    ${this.renderKPIChartBar('التدريبات', kpi.trainingsCount || 0, targetTrainings)}
                 </div>
             </div>
             ${kpi.isManual ? '<div class="mt-4 text-sm text-amber-600 flex items-center gap-1"><i class="fas fa-info-circle"></i><span>تم تعديل هذه المؤشرات يدوياً</span></div>' : ''}
@@ -3589,22 +3594,6 @@ const SafetyHealthManagement = {
         }
     },
 
-    renderKPIChartBar(label, current, target) {
-        const percentage = target > 0 ? Math.min((current / target) * 100, 100) : 0;
-        const color = percentage >= 80 ? 'bg-emerald-500' : percentage >= 50 ? 'bg-amber-500' : 'bg-red-500';
-        return `
-            <div class="shm-kpi-chart-row flex flex-wrap items-center gap-3 py-3">
-                <span class="font-semibold text-gray-800 w-40 flex-shrink-0">${Utils.escapeHTML(label)}</span>
-                <span class="text-gray-500 text-sm flex-shrink-0">${current} / ${target}</span>
-                <div class="flex-1 min-w-0 bg-gray-200 rounded-full h-4 overflow-hidden">
-                    <div class="${color} h-4 rounded-full flex items-center justify-end pr-2 transition-all duration-300" style="min-width: ${percentage > 0 ? '1.5rem' : '0'}; width: ${percentage}%">
-                        ${percentage > 0 ? `<span class="text-xs text-white font-bold">${percentage.toFixed(0)}%</span>` : ''}
-                    </div>
-                </div>
-            </div>
-        `;
-    },
-
     async exportReport(memberId) {
         if (!memberId) {
             Notification.error('يرجى اختيار عضو الفريق');
@@ -3698,7 +3687,7 @@ const SafetyHealthManagement = {
                                 </tr>
                                 <tr>
                                     <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><strong>التدريبات:</strong></td>
-                                    <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left;">${kpis.trainingsCount || 0} / ${kpis.targetTrainings || 2}</td>
+                                    <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left;">${kpis.trainingsCount || 0} / ${kpis.targetTrainings || 3}</td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 8px;"><strong>نسبة الالتزام:</strong></td>
@@ -3821,7 +3810,7 @@ const SafetyHealthManagement = {
                     ['الجولات التفتيشية', kpis.inspectionsCount || 0, '/', kpis.targetInspections || 20],
                     ['الإجراءات المغلقة', kpis.closedActionsCount || 0],
                     ['الملاحظات', kpis.observationsCount || 0, '/', kpis.targetObservations || 15],
-                    ['التدريبات', kpis.trainingsCount || 0, '/', kpis.targetTrainings || 2],
+                    ['التدريبات', kpis.trainingsCount || 0, '/', kpis.targetTrainings || 3],
                     ['نسبة الالتزام', (kpis.commitmentRate || 0).toFixed(1) + '%', '/', (kpis.targetCommitment || 95) + '%']
                 ];
 
