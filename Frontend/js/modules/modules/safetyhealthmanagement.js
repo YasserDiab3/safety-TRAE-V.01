@@ -810,16 +810,25 @@ const SafetyHealthManagement = {
                 break;
             case 'structure':
                 contentContainer.innerHTML = await this.renderStructureView();
-                // ربط زر إضافة المنصب فوراً باستخدام requestAnimationFrame
                 requestAnimationFrame(() => {
                     const addBtn = document.getElementById('add-structure-btn');
                     if (addBtn) {
-                        // إزالة أي مستمعين سابقين
                         const newBtn = addBtn.cloneNode(true);
                         addBtn.parentNode.replaceChild(newBtn, addBtn);
                         newBtn.addEventListener('click', () => this.showStructureForm());
                     }
-                    // تحميل البيانات بشكل متوازي
+                    const gotoTeamBtn = document.getElementById('shm-goto-team-btn');
+                    if (gotoTeamBtn) {
+                        const btn = gotoTeamBtn.cloneNode(true);
+                        gotoTeamBtn.parentNode.replaceChild(btn, gotoTeamBtn);
+                        btn.addEventListener('click', () => this.switchTab('team'));
+                    }
+                    const createFromTeamBtn = document.getElementById('create-structure-from-team-btn');
+                    if (createFromTeamBtn) {
+                        const btn = createFromTeamBtn.cloneNode(true);
+                        createFromTeamBtn.parentNode.replaceChild(btn, createFromTeamBtn);
+                        btn.addEventListener('click', () => this.createStructureFromTeam());
+                    }
                     this.loadOrganizationalStructure();
                 });
                 break;
@@ -901,10 +910,15 @@ const SafetyHealthManagement = {
                 <div class="card-header">
                     <div class="flex items-center justify-between flex-wrap gap-4">
                         <h2 class="card-title"><i class="fas fa-users ml-2"></i>إدارة فريق السلامة</h2>
-                        <button id="add-team-member-btn" class="btn-primary" type="button">
-                            <i class="fas fa-plus ml-2"></i>
-                            إضافة عضو جديد
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button type="button" id="shm-goto-structure-btn" class="btn-secondary btn-sm">
+                                <i class="fas fa-sitemap ml-2"></i>عرض الهيكل الوظيفي
+                            </button>
+                            <button id="add-team-member-btn" class="btn-primary" type="button">
+                                <i class="fas fa-plus ml-2"></i>
+                                إضافة عضو جديد
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body">
@@ -1151,6 +1165,12 @@ const SafetyHealthManagement = {
             const newBtn = addBtn.cloneNode(true);
             addBtn.parentNode.replaceChild(newBtn, addBtn);
             newBtn.addEventListener('click', () => this.showMemberForm());
+        }
+        const gotoStructureBtn = document.getElementById('shm-goto-structure-btn');
+        if (gotoStructureBtn) {
+            const btn = gotoStructureBtn.cloneNode(true);
+            gotoStructureBtn.parentNode.replaceChild(btn, gotoStructureBtn);
+            btn.addEventListener('click', () => this.switchTab('structure'));
         }
     },
 
@@ -1553,12 +1573,20 @@ const SafetyHealthManagement = {
         return `
             <div class="content-card">
                 <div class="card-header">
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between flex-wrap gap-2">
                         <h2 class="card-title"><i class="fas fa-sitemap ml-2"></i>الهيكل الوظيفي لفريق السلامة</h2>
-                        <button id="add-structure-btn" class="btn-primary">
-                            <i class="fas fa-plus ml-2"></i>
-                            إضافة منصب
-                        </button>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <button type="button" id="shm-goto-team-btn" class="btn-secondary btn-sm">
+                                <i class="fas fa-users ml-2"></i>عرض فريق السلامة
+                            </button>
+                            <button type="button" id="create-structure-from-team-btn" class="btn-secondary btn-sm">
+                                <i class="fas fa-sync-alt ml-2"></i>إنشاء الهيكل من الفريق
+                            </button>
+                            <button id="add-structure-btn" class="btn-primary">
+                                <i class="fas fa-plus ml-2"></i>
+                                إضافة منصب
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body">
@@ -1801,8 +1829,32 @@ const SafetyHealthManagement = {
         `;
         document.body.appendChild(modal);
 
-        // Load team members for dropdown
-        await this.loadTeamMembersForDropdown(modal.querySelector('#structure-member-id'), data?.memberId);
+        // تحميل أعضاء الفريق في القائمة وإكمال الحقول تلقائياً عند اختيار الاسم
+        const members = await this.loadTeamMembersForDropdown(modal.querySelector('#structure-member-id'), data?.memberId);
+        const memberSelect = modal.querySelector('#structure-member-id');
+        const positionInput = modal.querySelector('#structure-position');
+        const positionLevelInput = modal.querySelector('#structure-position-level');
+        const descriptionInput = modal.querySelector('#structure-description');
+
+        const fillFromMember = (memberId) => {
+            if (!memberId || !Array.isArray(members) || members.length === 0) return;
+            const member = members.find(m => String(m.id) === String(memberId));
+            if (!member) return;
+            if (positionInput) positionInput.value = member.jobTitle || member.position || '';
+            if (positionLevelInput) positionLevelInput.value = member.positionLevel || member.jobTitle || '';
+            if (descriptionInput && !descriptionInput.value) {
+                const parts = [member.department ? 'القسم: ' + member.department : '', member.jobTitle ? 'الوظيفة: ' + member.jobTitle : ''].filter(Boolean);
+                descriptionInput.value = parts.length ? parts.join(' — ') : '';
+            }
+        };
+
+        if (memberSelect) {
+            memberSelect.addEventListener('change', function () {
+                fillFromMember(this.value);
+            });
+            if (data?.memberId) fillFromMember(data.memberId);
+            else if (memberSelect.value) fillFromMember(memberSelect.value);
+        }
 
         const saveBtn = modal.querySelector('#save-structure-btn');
         const form = modal.querySelector('#structure-form');
@@ -1813,14 +1865,17 @@ const SafetyHealthManagement = {
         });
     },
 
+    /**
+     * تحميل أعضاء الفريق في قائمة منسدلة (للهيكل الوظيفي وغيره).
+     * @returns {Promise<Array>} مصفوفة أعضاء الفريق للاستخدام في إكمال الحقول تلقائياً
+     */
     async loadTeamMembersForDropdown(selectElement, selectedId = null) {
-        if (!selectElement) return;
+        if (!selectElement) return [];
 
-        // التحقق من إمكانية الوصول للبيانات
         const accessMessage = this.getDataAccessMessage('getSafetyTeamMembers', {});
         if (accessMessage) {
             selectElement.innerHTML = `<option value="">${accessMessage}</option>`;
-            return;
+            return [];
         }
 
         try {
@@ -1833,14 +1888,16 @@ const SafetyHealthManagement = {
                 const members = Array.isArray(response.data) ? response.data : [];
                 selectElement.innerHTML = '<option value="">اختر عضو الفريق</option>' +
                     members.map(m => `
-                        <option value="${m.id}" ${m.id === selectedId ? 'selected' : ''}>
-                            ${Utils.escapeHTML(m.name || '')} - ${Utils.escapeHTML(m.jobTitle || '')}
+                        <option value="${Utils.escapeHTML(String(m.id))}" ${m.id === selectedId || String(m.id) === String(selectedId) ? 'selected' : ''}>
+                            ${Utils.escapeHTML(m.name || '')} - ${Utils.escapeHTML(m.jobTitle || m.position || '')}
                         </option>
                     `).join('');
+                return members;
             }
         } catch (error) {
             Utils.safeError('خطأ في تحميل أعضاء الفريق:', error);
         }
+        return [];
     },
 
     async handleStructureSubmit(form, editId = null, modal) {
@@ -1901,6 +1958,72 @@ const SafetyHealthManagement = {
             const errorMessage = error?.message || error?.toString() || 'خطأ غير معروف';
             Utils.safeError('خطأ في حفظ المنصب:', errorMessage, error);
             Notification.error('حدث خطأ: ' + errorMessage);
+        } finally {
+            Loading.hide();
+            this.loadingStates.structure = false;
+        }
+    },
+
+    /**
+     * إنشاء الهيكل الوظيفي تلقائياً من أعضاء فريق السلامة (إضافة مناصب لأعضاء غير موجودين في الهيكل)
+     */
+    async createStructureFromTeam() {
+        if (this.loadingStates.structure) {
+            Notification.warning('جاري تنفيذ عملية أخرى، يرجى الانتظار...');
+            return;
+        }
+        const accessMessage = this.getDataAccessMessage('getSafetyTeamMembers', {});
+        if (accessMessage) {
+            Notification.error(accessMessage);
+            return;
+        }
+        const structureAccess = this.getDataAccessMessage('getOrganizationalStructure', {});
+        if (structureAccess) {
+            Notification.error(structureAccess);
+            return;
+        }
+        try {
+            this.loadingStates.structure = true;
+            Loading.show();
+            const [membersRes, structureRes] = await Promise.all([
+                GoogleIntegration.sendRequest({ action: 'getSafetyTeamMembers', data: {} }),
+                GoogleIntegration.sendRequest({ action: 'getOrganizationalStructure', data: {} })
+            ]);
+            const members = (membersRes.success && membersRes.data) ? (Array.isArray(membersRes.data) ? membersRes.data : []) : [];
+            const structure = (structureRes.success && structureRes.data) ? (Array.isArray(structureRes.data) ? structureRes.data : []) : [];
+            const existingMemberIds = new Set(structure.map(s => s.memberId).filter(Boolean).map(id => String(id)));
+            const toAdd = members.filter(m => !existingMemberIds.has(String(m.id)));
+            if (toAdd.length === 0) {
+                Notification.info('جميع أعضاء الفريق مضافون بالفعل إلى الهيكل الوظيفي');
+                Loading.hide();
+                this.loadingStates.structure = false;
+                return;
+            }
+            const maxOrder = structure.length ? Math.max(...structure.map(s => (s.order || 0))) : 0;
+            let added = 0;
+            for (let i = 0; i < toAdd.length; i++) {
+                const m = toAdd[i];
+                const formData = {
+                    position: m.jobTitle || m.position || 'منصب في فريق السلامة',
+                    positionLevel: m.positionLevel || m.jobTitle || '',
+                    memberId: m.id,
+                    memberName: m.name || '',
+                    order: maxOrder + i + 1,
+                    description: m.department ? 'القسم: ' + (m.department || '') : ''
+                };
+                const response = await GoogleIntegration.sendRequest({
+                    action: 'saveOrganizationalStructure',
+                    data: formData
+                });
+                if (response && response.success) added++;
+            }
+            this.cache.structure = null;
+            await this.loadOrganizationalStructure();
+            Notification.success('تم إنشاء الهيكل من الفريق: تمت إضافة ' + added + ' منصب/مناصب');
+        } catch (error) {
+            const msg = error?.message || error?.toString() || 'خطأ غير معروف';
+            Utils.safeError('خطأ في إنشاء الهيكل من الفريق:', msg, error);
+            Notification.error('حدث خطأ: ' + msg);
         } finally {
             Loading.hide();
             this.loadingStates.structure = false;
@@ -3364,9 +3487,12 @@ const SafetyHealthManagement = {
 
         try {
             Loading.show();
+            var now = new Date();
+            var startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            var endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
             const response = await GoogleIntegration.sendRequest({
                 action: 'generateSafetyTeamPerformanceReport',
-                data: { memberId: memberId }
+                data: { memberId: memberId, startDate: startDate.toISOString ? startDate.toISOString().slice(0, 10) : startDate, endDate: endDate.toISOString ? endDate.toISOString().slice(0, 10) : endDate }
             });
 
             if (response.success && response.data) {

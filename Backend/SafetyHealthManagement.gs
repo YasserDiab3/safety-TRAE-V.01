@@ -398,7 +398,7 @@ function getJobDescription(memberId) {
         
         var jobDescription = null;
         for (var i = 0; i < data.length; i++) {
-            if (data[i].memberId === memberId || data[i].employeeId === memberId) {
+            if (String(data[i].memberId) === String(memberId) || String(data[i].employeeId) === String(memberId)) {
                 jobDescription = data[i];
                 break;
             }
@@ -974,22 +974,30 @@ function generateSafetyTeamPerformanceReport(memberId, startDate = null, endDate
         var startDateObj = new Date(startDate);
         var endDateObj = new Date(endDate);
         
+        var mid = String(memberId);
         var inspections = readFromSheet('PeriodicInspectionRecords', spreadsheetId).filter(function(record) {
-            if (record.inspector !== memberId || !record.inspectionDate) return false;
+            if (!record.inspectionDate) return false;
+            if (String(record.inspector) !== mid && String(record.responsible || '') !== mid) return false;
             var recordDate = new Date(record.inspectionDate);
             return recordDate >= startDateObj && recordDate <= endDateObj;
         });
         
         var actions = readFromSheet('ActionTrackingRegister', spreadsheetId).filter(function(record) {
-            if (record.responsible !== memberId || !record.createdAt) return false;
+            if (!record.createdAt) return false;
+            if (String(record.responsible || '') !== mid && String(record.assignedTo || '') !== mid) return false;
             var recordDate = new Date(record.createdAt);
             return recordDate >= startDateObj && recordDate <= endDateObj;
         });
         
         var observations = readFromSheet('DailyObservations', spreadsheetId).filter(function(obs) {
-            if (obs.supervisor !== memberId || !obs.date) return false;
+            if (!obs.date) return false;
             var obsDate = new Date(obs.date);
-            return obsDate >= startDateObj && obsDate <= endDateObj;
+            if (obsDate < startDateObj || obsDate > endDateObj) return false;
+            if (obs.supervisor != null && String(obs.supervisor) === mid) return true;
+            if (obs.responsible != null && String(obs.responsible) === mid) return true;
+            if (obs.reportedBy != null && String(obs.reportedBy) === mid) return true;
+            if (obs.observerName != null && member.name && String(obs.observerName).trim() === String(member.name).trim()) return true;
+            return false;
         });
         
         var trainings = readFromSheet('Training', spreadsheetId).filter(function(training) {
@@ -997,19 +1005,13 @@ function generateSafetyTeamPerformanceReport(memberId, startDate = null, endDate
             var trainingDate = new Date(training.startDate);
             if (trainingDate < startDateObj || trainingDate > endDateObj) return false;
             
-            if (training.trainer === memberId) return true;
-            
+            if (training.trainer != null && String(training.trainer) === mid) return true;
             if (training.participants && typeof training.participants === 'string') {
                 try {
                     var participants = JSON.parse(training.participants);
-                    if (Array.isArray(participants) && participants.indexOf(memberId) !== -1) {
-                        return true;
-                    }
-                } catch (e) {
-                    if (training.participants.indexOf(memberId) !== -1) {
-                        return true;
-                    }
-                }
+                    if (Array.isArray(participants) && participants.some(function(p) { return p != null && (String(p) === mid || (typeof p === 'object' && p.id != null && String(p.id) === mid)); })) return true;
+                } catch (e) {}
+                if (training.participants.indexOf(mid) !== -1) return true;
             }
             return false;
         });
@@ -1037,7 +1039,7 @@ function generateSafetyTeamPerformanceReport(memberId, startDate = null, endDate
                 totalObservations: activities.observations.length,
                 totalTrainings: activities.trainings.length,
                 closedActions: activities.actions.filter(function(a) {
-                    return a.status === 'مكتمل';
+                    return a.status === 'مكتمل' || a.status === 'مغلق' || a.status === 'completed';
                 }).length,
                 commitmentRate: kpis.commitmentRate || 0
             },
