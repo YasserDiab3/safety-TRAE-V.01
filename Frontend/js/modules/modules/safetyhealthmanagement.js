@@ -94,6 +94,7 @@ const SafetyHealthManagement = {
         members: null,
         structure: null,
         jobDescriptions: null,
+        jobDescriptionsLastLoad: null,
         kpis: new Map(),
         lastLoad: null,
         cacheTimeout: 3 * 60 * 1000 // 3 دقائق (تحسين الأداء)
@@ -122,10 +123,10 @@ const SafetyHealthManagement = {
         }
 
         try {
-            // تحميل المحتوى بشكل فوري بدون تأخير
+            // تحميل المحتوى بشكل فوري (بدون await لتسريع الظهور)
             let content = '';
             try {
-                content = await this.render();
+                content = this.render();
             } catch (error) {
                 if (typeof Utils !== 'undefined' && Utils.safeWarn) {
                     Utils.safeWarn('⚠️ خطأ في تحميل محتوى الواجهة:', error);
@@ -158,47 +159,16 @@ const SafetyHealthManagement = {
             }
 
             section.innerHTML = content;
-            
-            // تهيئة الأحداث فوراً بعد عرض الواجهة
+
+            const tabContent = document.getElementById('shm-tab-content');
+            if (tabContent) {
+                tabContent.innerHTML = this.renderTeamView();
+                this.attachTeamAddMemberButton();
+                requestAnimationFrame(() => this.loadTeamMembers().catch(() => {}));
+            }
+
             try {
                 this.setupEventListeners();
-                
-                // ✅ تحميل محتوى التبويب الأول (team) فوراً بعد عرض الواجهة
-                setTimeout(async () => {
-                    try {
-                        const tabContent = document.getElementById('shm-tab-content');
-                        if (!tabContent) return;
-                        
-                        // تحميل محتوى فريق السلامة
-                        const teamContent = await this.renderTeamView().catch(error => {
-                            Utils.safeWarn('⚠️ خطأ في تحميل فريق السلامة:', error);
-                            return `
-                                <div class="content-card">
-                                    <div class="card-body">
-                                        <div class="empty-state">
-                                            <i class="fas fa-exclamation-triangle text-yellow-500 text-4xl mb-4"></i>
-                                            <p class="text-gray-500 mb-4">حدث خطأ في تحميل البيانات</p>
-                                            <button onclick="SafetyHealthManagement.load()" class="btn-primary">
-                                                <i class="fas fa-redo ml-2"></i>
-                                                إعادة المحاولة
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-                        });
-                        
-                        tabContent.innerHTML = teamContent;
-                        
-                        // ربط زر إضافة عضو جديد (المحتوى أصبح في DOM الآن)
-                        this.attachTeamAddMemberButton();
-                        
-                        // تحميل البيانات بعد عرض الواجهة
-                        this.loadTeamMembers().catch(() => {});
-                    } catch (error) {
-                        Utils.safeWarn('⚠️ خطأ في تحميل التبويب:', error);
-                    }
-                }, 0);
             } catch (error) {
                 if (typeof Utils !== 'undefined' && Utils.safeWarn) {
                     Utils.safeWarn('⚠️ خطأ في setupEventListeners:', error);
@@ -233,7 +203,7 @@ const SafetyHealthManagement = {
         }
     },
 
-    async render() {
+    render() {
         return `
             <div class="section-header">
                 <div class="flex items-center justify-between flex-wrap gap-4">
@@ -832,12 +802,11 @@ const SafetyHealthManagement = {
 
         switch (tabName) {
             case 'team':
-                contentContainer.innerHTML = await this.renderTeamView();
-                    // استخدام requestAnimationFrame لضمان تحميل DOM أولاً
-                    requestAnimationFrame(() => {
-                this.attachTeamAddMemberButton();
-                this.loadTeamMembers();
-                    });
+                contentContainer.innerHTML = this.renderTeamView();
+                requestAnimationFrame(() => {
+                    this.attachTeamAddMemberButton();
+                    this.loadTeamMembers();
+                });
                 break;
             case 'structure':
                 contentContainer.innerHTML = await this.renderStructureView();
@@ -909,7 +878,7 @@ const SafetyHealthManagement = {
     },
 
     // ===== Team Management =====
-    async renderTeamView() {
+    renderTeamView() {
         return `
             <div class="content-card">
                 <div class="card-header">
@@ -967,61 +936,57 @@ const SafetyHealthManagement = {
         }
         this.loadingStates.team = true;
 
-        // استخدام Cache إذا كان متاحاً
-        if (this.cache.members && this.cache.lastLoad &&
-            (Date.now() - this.cache.lastLoad) < this.cache.cacheTimeout) {
+        const cacheValid = this.cache.members && this.cache.lastLoad &&
+            (Date.now() - this.cache.lastLoad) < this.cache.cacheTimeout;
+
+        // عرض الكاش فوراً إن وُجد (تجربة أسرع دون شاشة تحميل عامة)
+        if (this.cache.members && this.cache.members.length > 0) {
+            this.allMembers = this.cache.members;
             this.renderTeamMembers(this.cache.members);
             this.loadFilterOptions(this.cache.members);
+        }
+        if (cacheValid) {
             this.loadingStates.team = false;
             return;
         }
 
+        // إن لم يكن هناك كاش، عرض مؤشر تحميل داخل التبويب فقط (بدون Loading العام)
+        if (!this.cache.members || this.cache.members.length === 0) {
+            container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">جاري التحميل...</p></div>';
+        }
+
         try {
-            Loading.show();
-            
-            // التحقق من إمكانية الوصول للبيانات (Google Apps Script أو بيانات محلية)
+            // التحقق من إمكانية الوصول للبيانات
             const accessMessage = this.getDataAccessMessage('getSafetyTeamMembers', {});
             if (accessMessage) {
                 container.innerHTML = `<div class="empty-state col-span-full"><p class="text-yellow-600">${accessMessage}</p></div>`;
-                Loading.hide();
                 this.loadingStates.team = false;
                 return;
             }
-            
-            // محاولة جلب البيانات (سيعيد البيانات المحلية تلقائياً إذا لم يكن Google Apps Script مفعلاً)
+
             const response = await GoogleIntegration.sendRequest({
                 action: 'getSafetyTeamMembers',
                 data: {}
             });
 
-            // Handle both success and failure cases gracefully
             if (response && response.success && response.data) {
                 const members = Array.isArray(response.data) ? response.data : [];
-                this.allMembers = members; // Store for filtering
-
-                // حفظ في Cache
+                this.allMembers = members;
                 this.cache.members = members;
                 this.cache.lastLoad = Date.now();
 
                 if (members.length === 0) {
                     container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
-                    Loading.hide();
-                    this.loadingStates.team = false;
-                    return;
+                } else {
+                    this.loadFilterOptions(members);
+                    this.renderTeamMembers(members);
                 }
-
-                // Load filter options
-                this.loadFilterOptions(members);
-
-                // Apply filters and render
-                this.renderTeamMembers(members);
             } else {
-                // Handle case when Google Apps Script is not enabled or returns empty result
-                // Don't show error, just show empty state
-                container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
+                if (!this.cache.members || this.cache.members.length === 0) {
+                    container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
+                }
             }
         } catch (error) {
-            // تجاهل أخطاء Chrome Extensions تلقائياً
             const errorMessage = error?.message || error?.toString() || 'خطأ غير معروف';
             const isChromeExtensionError = errorMessage.includes('runtime.lastError') ||
                 errorMessage.includes('message port closed') ||
@@ -1030,26 +995,20 @@ const SafetyHealthManagement = {
                 errorMessage.includes('Extension context invalidated') ||
                 errorMessage.includes('The message port closed before a response was received');
 
-            // إذا كان خطأ Chrome Extension، نتجاهله تماماً ونحاول مرة أخرى
             if (isChromeExtensionError) {
                 Utils.safeLog('⚠ تم تجاهل خطأ Chrome Extension في loadTeamMembers');
-                // إعادة المحاولة بعد ثانية واحدة
-                setTimeout(() => {
-                    this.loadTeamMembers();
-                }, 1000);
-                Loading.hide();
+                setTimeout(() => this.loadTeamMembers(), 1000);
+                this.loadingStates.team = false;
                 return;
             }
 
-            // Don't log errors for Google Apps Script not enabled - just show empty state
             if (!errorMessage.includes('Google Apps Script') && !errorMessage.includes('غير مفعّل')) {
                 Utils.safeError('خطأ في تحميل أعضاء الفريق:', errorMessage, error);
             }
-
-            // Show empty state instead of error message for better UX
-            container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
+            if (!this.cache.members || this.cache.members.length === 0) {
+                container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
+            }
         } finally {
-            Loading.hide();
             this.loadingStates.team = false;
         }
     },
@@ -2052,17 +2011,26 @@ const SafetyHealthManagement = {
         const container = document.getElementById('job-descriptions-list');
         if (!container) return;
 
-        // التحقق من إمكانية الوصول للبيانات
         const accessMessage = this.getDataAccessMessage('getJobDescriptions', {});
         if (accessMessage) {
             container.innerHTML = `<div class="empty-state"><p class="text-gray-500">${accessMessage}</p></div>`;
-            Loading.hide();
             return;
         }
 
+        // عرض كاش الأوصاف فوراً إن وُجد
+        const cacheValid = this.cache.jobDescriptions && this.cache.jobDescriptionsLastLoad &&
+            (Date.now() - this.cache.jobDescriptionsLastLoad) < this.cache.cacheTimeout;
+        if (cacheValid && Array.isArray(this.cache.jobDescriptions) && this.cache.jobDescriptions.length > 0) {
+            container.innerHTML = this._renderJobDescriptionsList(this.cache.jobDescriptions);
+            return;
+        }
+        if (this.cache.jobDescriptions && this.cache.jobDescriptions.length > 0) {
+            container.innerHTML = this._renderJobDescriptionsList(this.cache.jobDescriptions);
+        } else {
+            container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
+        }
+
         try {
-            Loading.show();
-            // Get all team members first
             const membersResponse = await GoogleIntegration.sendRequest({
                 action: 'getSafetyTeamMembers',
                 data: {}
@@ -2073,57 +2041,28 @@ const SafetyHealthManagement = {
 
                 if (members.length === 0) {
                     container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا توجد أعضاء لإضافة أوصاف وظيفية</p></div>';
-                    Loading.hide();
                     return;
                 }
 
-                // Load job descriptions for each member
-                const jobDescriptions = [];
-                for (const member of members) {
-                    try {
-                        const jdResponse = await GoogleIntegration.sendRequest({
-                            action: 'getJobDescription',
-                            data: { memberId: member.id }
-                        });
-                        if (jdResponse.success && jdResponse.data) {
-                            jobDescriptions.push({ ...jdResponse.data, member: member });
-                        } else {
-                            jobDescriptions.push({ member: member, hasDescription: false });
-                        }
-                    } catch (e) {
-                        jobDescriptions.push({ member: member, hasDescription: false });
-                    }
-                }
+                // تحميل أوصاف الوظائف بالتوازي (أسرع بكثير من طلب لكل عضو)
+                const jdPromises = members.map(member =>
+                    GoogleIntegration.sendRequest({ action: 'getJobDescription', data: { memberId: member.id } })
+                        .then(jdResponse => (jdResponse && jdResponse.success && jdResponse.data)
+                            ? { ...jdResponse.data, member }
+                            : { member, hasDescription: false })
+                        .catch(() => ({ member, hasDescription: false }))
+                );
+                const jobDescriptions = await Promise.all(jdPromises);
+
+                this.cache.jobDescriptions = jobDescriptions;
+                this.cache.jobDescriptionsLastLoad = Date.now();
 
                 if (jobDescriptions.length === 0) {
                     container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا توجد أوصاف وظيفية مسجلة</p></div>';
-                    Loading.hide();
                     return;
                 }
 
-                container.innerHTML = jobDescriptions.map(jd => `
-                    <div class="bg-white border border-gray-200 rounded-lg p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <div>
-                                <h3 class="font-semibold text-gray-800">${Utils.escapeHTML(jd.member.name || '')}</h3>
-                                <p class="text-sm text-gray-600">${Utils.escapeHTML(jd.member.jobTitle || '')}</p>
-                            </div>
-                            <button onclick="SafetyHealthManagement.showJobDescriptionForm('${jd.member.id}', ${jd.hasDescription !== false ? JSON.stringify(jd).replace(/"/g, '&quot;') : 'null'})" class="btn-primary btn-sm">
-                                <i class="fas fa-${jd.hasDescription !== false ? 'edit' : 'plus'} ml-2"></i>
-                                ${jd.hasDescription !== false ? 'تعديل' : 'إضافة'}
-                            </button>
-                        </div>
-                        ${jd.hasDescription !== false ? `
-                            <div class="mt-3 space-y-2">
-                                <div><strong>الدور الوظيفي:</strong> ${Utils.escapeHTML(jd.roleDescription || '—')}</div>
-                                <div><strong>المسؤوليات:</strong> ${Utils.escapeHTML(jd.responsibilities || '—')}</div>
-                                <div><strong>المهام:</strong> ${Utils.escapeHTML(jd.tasks || '—')}</div>
-                            </div>
-                        ` : '<p class="text-gray-500 text-sm">لا يوجد وصف وظيفي مسجل</p>'}
-                    </div>
-                `).join('');
-
-                // زر الإضافة مُربوط مسبقاً في switchTab عبر attachJobDescriptionAddButton
+                container.innerHTML = this._renderJobDescriptionsList(jobDescriptions);
             }
         } catch (error) {
             // تجاهل أخطاء Chrome Extensions تلقائياً
@@ -2138,17 +2077,13 @@ const SafetyHealthManagement = {
             // إذا كان خطأ Chrome Extension، نتجاهله تماماً ونحاول مرة أخرى
             if (isChromeExtensionError) {
                 Utils.safeLog('⚠ تم تجاهل خطأ Chrome Extension في loadJobDescriptions');
-                setTimeout(() => {
-                    this.loadJobDescriptions();
-                }, 1000);
-                Loading.hide();
+                setTimeout(() => this.loadJobDescriptions(), 1000);
                 return;
             }
 
-            // لا نعرض خطأ في Console إذا كان Google Apps Script غير مفعّل (تم التحقق مسبقاً)
             const isGoogleEnabled = this.isGoogleAppsScriptEnabled();
             if (isGoogleEnabled) {
-            Utils.safeError('خطأ في تحميل الأوصاف الوظيفية:', errorMessage, error);
+                Utils.safeError('خطأ في تحميل الأوصاف الوظيفية:', errorMessage, error);
             }
 
             let displayMessage = 'لا توجد أوصاف وظيفية مسجلة';
@@ -2178,9 +2113,32 @@ const SafetyHealthManagement = {
                     ` : ''}
                 </div>
             `;
-        } finally {
-            Loading.hide();
         }
+    },
+
+    _renderJobDescriptionsList(jobDescriptions) {
+        if (!Array.isArray(jobDescriptions) || jobDescriptions.length === 0) return '';
+        return jobDescriptions.map(jd => `
+            <div class="bg-white border border-gray-200 rounded-lg p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h3 class="font-semibold text-gray-800">${Utils.escapeHTML(jd.member.name || '')}</h3>
+                        <p class="text-sm text-gray-600">${Utils.escapeHTML(jd.member.jobTitle || '')}</p>
+                    </div>
+                    <button onclick="SafetyHealthManagement.showJobDescriptionForm('${jd.member.id}', ${jd.hasDescription !== false ? JSON.stringify(jd).replace(/"/g, '&quot;') : 'null'})" class="btn-primary btn-sm">
+                        <i class="fas fa-${jd.hasDescription !== false ? 'edit' : 'plus'} ml-2"></i>
+                        ${jd.hasDescription !== false ? 'تعديل' : 'إضافة'}
+                    </button>
+                </div>
+                ${jd.hasDescription !== false ? `
+                    <div class="mt-3 space-y-2">
+                        <div><strong>الدور الوظيفي:</strong> ${Utils.escapeHTML(jd.roleDescription || '—')}</div>
+                        <div><strong>المسؤوليات:</strong> ${Utils.escapeHTML(jd.responsibilities || '—')}</div>
+                        <div><strong>المهام:</strong> ${Utils.escapeHTML(jd.tasks || '—')}</div>
+                    </div>
+                ` : '<p class="text-gray-500 text-sm">لا يوجد وصف وظيفي مسجل</p>'}
+            </div>
+        `).join('');
     },
 
     async showJobDescriptionForm(memberId = null, data = null) {
@@ -2299,6 +2257,8 @@ const SafetyHealthManagement = {
             if (response.success) {
                 Notification.success(editId ? 'تم تحديث الوصف الوظيفي بنجاح' : 'تم إضافة الوصف الوظيفي بنجاح');
                 modal.remove();
+                this.cache.jobDescriptions = null;
+                this.cache.jobDescriptionsLastLoad = null;
                 this.loadJobDescriptions();
             } else {
                 Notification.error('حدث خطأ: ' + (response.message || 'فشل الحفظ'));
