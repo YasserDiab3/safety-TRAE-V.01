@@ -931,6 +931,7 @@ body.app-active {
 /* Navigation */
 .navigation {
     flex: 1;
+    min-height: 0;
     padding: 1rem 0;
     overflow-y: auto;
     overflow-x: hidden;
@@ -950,6 +951,7 @@ body.app-active {
     margin: 0.25rem 0.5rem;
     border-radius: 8px 0 0 8px;
     position: relative;
+    min-width: 0;
     overflow: hidden;
     min-height: 48px;
     /* Touch-friendly minimum height */
@@ -973,6 +975,13 @@ body.app-active {
 .nav-item:hover::before,
 .nav-item.active::before {
     width: 100%;
+}
+
+.nav-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
 .nav-item i {
@@ -4032,12 +4041,15 @@ body.app-active {
     }
 
     .sidebar {
-        width: 85%;
-        max-width: 320px;
-        min-width: 280px;
+        width: min(280px, 85vw);
+        max-width: 280px;
+        min-width: 0;
         transform: translateX(100%);
         z-index: 1000;
         box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
     }
 
     .sidebar.open {
@@ -4091,10 +4103,18 @@ body.app-active {
     .kpi-grid {
         grid-template-columns: 1fr;
         gap: 1rem;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .kpi-card {
+        min-width: 0;
+        max-width: 100%;
     }
 
     .stats-grid {
         grid-template-columns: 1fr;
+        min-width: 0;
     }
 
     .theme-toggle {
@@ -4436,7 +4456,9 @@ body.app-active {
     }
 
     .sidebar {
-        max-width: 100%;
+        width: min(280px, 85vw) !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
     }
 
     .kpi-card {
@@ -4633,6 +4655,23 @@ body.app-active {
     /* Show only on desktop */
     .show-desktop {
         display: block !important;
+    }
+}
+
+/* صندوق تقدم المزامنة العائم - تجنب التداخل على الموبايل */
+#sync-progress-floating {
+    max-width: calc(100vw - 32px);
+    left: 16px !important;
+    right: 16px !important;
+    transform: none !important;
+    margin-left: 0 !important;
+}
+@media (max-width: 480px) {
+    #sync-progress-floating {
+        bottom: calc(140px + env(safe-area-inset-bottom)) !important;
+        left: 16px !important;
+        right: auto !important;
+        width: auto !important;
     }
 }
 
@@ -6911,16 +6950,16 @@ textarea.form-input {
         width: 100vw;
         left: 0;
         right: 0;
-        bottom: 70px;
-        height: calc(100vh - 70px);
+        bottom: calc(70px + env(safe-area-inset-bottom));
+        height: calc(100vh - 70px - env(safe-area-inset-bottom));
         border-radius: 0;
         border-left: none;
         border-right: none;
     }
 
     .user-ai-assistant-btn {
-        bottom: 15px;
-        left: 15px;
+        bottom: calc(20px + env(safe-area-inset-bottom));
+        left: 16px;
         width: 48px;
         height: 48px;
     }
