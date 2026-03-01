@@ -4345,7 +4345,7 @@
                         const isLocal = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'));
                         const isFileProtocol = (typeof window !== 'undefined' && (window.location.protocol === 'file:' || window.location.origin === 'null'));
                         if (!isFileProtocol && !isLocal) {
-                            const manifestPaths = ['/Frontend/manifest.json', 'manifest.json', './manifest.json'];
+                            const manifestPaths = ['manifest.json', './manifest.json', '/manifest.json', '/Frontend/manifest.json'];
                             for (const path of manifestPaths) {
                                 try {
                                     const response = await fetch(path);
@@ -4364,7 +4364,7 @@
                                 "name": "Americana HSE Management System",
                                 "short_name": "HSE System",
                                 "display": "standalone",
-                                "start_url": "/Frontend/",
+                                "start_url": "/",
                                 "icons": []
                             };
                         }
@@ -4378,7 +4378,7 @@
                             }
                         } else {
                             // Default to relative path
-                            manifest.start_url = "/Frontend/";
+                            manifest.start_url = "/";
                         }
 
                         // Helper function to validate data URL format
@@ -5464,8 +5464,8 @@
             if (window.location.protocol !== 'file:' && window.location.origin !== 'null' && window.location.origin) {
                 var link = document.createElement('link');
                 link.rel = 'manifest';
-                var p = (window.location.pathname || '').replace(/\/?[^/]*$/, '/');
-                link.href = (p || '/') + 'manifest.json';
+                // مسار نسبي ليعمل من الجذر (Vercel) أو من /Frontend/
+                link.href = 'manifest.json';
                 link.id = 'pwa-manifest-link';
                 link.onerror = function(){ if(window.UniversalErrorHandler&&window.UniversalErrorHandler.shouldSuppress('Manifest error',this.href||'','')) return; console.warn('⚠️ manifest.json غير متوفر - ميزات PWA محدودة'); };
                 document.head.appendChild(link);

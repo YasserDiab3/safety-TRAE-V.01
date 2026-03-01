@@ -493,25 +493,28 @@ function getDocumentCodes(filters) {
     }
 }
 
+/** حقول كود المستند المسموح بها فقط (لتجنب كتابة action/csrfToken وغيرها في الورقة) */
+var DOCUMENT_CODE_FIELDS = ['id', 'code', 'documentName', 'documentType', 'department', 'status', 'description', 'createdAt', 'updatedAt', 'createdBy'];
+
 /**
  * إضافة كود مستند جديد
  */
 function addDocumentCodeToSheet(documentData) {
     try {
-        if (!documentData) {
+        if (!documentData || typeof documentData !== 'object') {
             return { success: false, message: 'بيانات الكود غير موجودة' };
         }
-        const sheetName = 'DocumentCodes';
-        if (!documentData.id) {
-            documentData.id = Utilities.getUuid();
+        var row = {};
+        for (var i = 0; i < DOCUMENT_CODE_FIELDS.length; i++) {
+            var key = DOCUMENT_CODE_FIELDS[i];
+            if (documentData[key] !== undefined && documentData[key] !== null) {
+                row[key] = documentData[key];
+            }
         }
-        if (!documentData.createdAt) {
-            documentData.createdAt = new Date();
-        }
-        if (!documentData.updatedAt) {
-            documentData.updatedAt = new Date();
-        }
-        return appendToSheet(sheetName, documentData, getSpreadsheetId());
+        if (!row.id) row.id = Utilities.getUuid();
+        if (!row.createdAt) row.createdAt = new Date();
+        if (!row.updatedAt) row.updatedAt = new Date();
+        return appendToSheet('DocumentCodes', row, getSpreadsheetId());
     } catch (error) {
         Logger.log('Error in addDocumentCodeToSheet: ' + error.toString());
         return { success: false, message: 'حدث خطأ أثناء إضافة كود المستند: ' + error.toString() };
@@ -519,24 +522,38 @@ function addDocumentCodeToSheet(documentData) {
 }
 
 /**
- * تحديث كود مستند
+ * اسم بديل للتوافق مع المشاريع التي تستخدم addDocumentCode
+ */
+function addDocumentCode(documentData) {
+    return addDocumentCodeToSheet(documentData);
+}
+
+/**
+ * تحديث كود مستند (يُحدَّث فقط الحقول المسموح بها)
  */
 function updateDocumentCode(codeId, updateData) {
     try {
         if (!codeId) {
             return { success: false, message: 'معرف الكود غير محدد' };
         }
-        const sheetName = 'DocumentCodes';
-        const spreadsheetId = getSpreadsheetId();
-        const data = readFromSheet(sheetName, spreadsheetId);
-        const index = data.findIndex(function(c) { return c.id === codeId; });
+        var sheetName = 'DocumentCodes';
+        var spreadsheetId = getSpreadsheetId();
+        var data = readFromSheet(sheetName, spreadsheetId);
+        var index = data.findIndex(function(c) { return c.id === codeId; });
         if (index === -1) {
             return { success: false, message: 'كود المستند غير موجود' };
         }
-        updateData.updatedAt = new Date();
-        for (var key in updateData) {
-            if (updateData.hasOwnProperty(key)) {
-                data[index][key] = updateData[key];
+        var filtered = {};
+        for (var i = 0; i < DOCUMENT_CODE_FIELDS.length; i++) {
+            var key = DOCUMENT_CODE_FIELDS[i];
+            if (updateData[key] !== undefined && updateData[key] !== null) {
+                filtered[key] = updateData[key];
+            }
+        }
+        filtered.updatedAt = new Date();
+        for (var k in filtered) {
+            if (filtered.hasOwnProperty(k)) {
+                data[index][k] = filtered[k];
             }
         }
         return saveToSheet(sheetName, data, spreadsheetId);

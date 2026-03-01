@@ -2027,25 +2027,36 @@ const ISO = {
             `;
         }
 
-        // جلب البيانات من Google Sheets
+        // جلب البيانات من Google Sheets (بالتوازي مع مهلة أقصى 20 ثانية)
         let documentCodes = [];
         let documentVersions = [];
+        const LOAD_TIMEOUT_MS = 20000;
 
         try {
             Loading.show();
-            const codesResult = await GoogleIntegration.fetchData('getDocumentCodes', {});
-            if (codesResult.success && codesResult.data) {
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('TIMEOUT')), LOAD_TIMEOUT_MS)
+            );
+            const fetchPromise = Promise.all([
+                GoogleIntegration.fetchData('getDocumentCodes', {}).catch(() => ({ success: false, data: [] })),
+                GoogleIntegration.fetchData('getDocumentVersions', { documentCodeId: null }).catch(() => ({ success: false, data: [] }))
+            ]);
+            const [codesResult, versionsResult] = await Promise.race([fetchPromise, timeoutPromise]);
+            if (codesResult && codesResult.success && codesResult.data) {
                 documentCodes = codesResult.data;
             }
-
-            const versionsResult = await GoogleIntegration.fetchData('getDocumentVersions', { documentCodeId: null });
-            if (versionsResult.success && versionsResult.data) {
+            if (versionsResult && versionsResult.success && versionsResult.data) {
                 documentVersions = versionsResult.data;
             }
-            Loading.hide();
         } catch (error) {
+            if (error && error.message === 'TIMEOUT') {
+                Utils.safeError('مركز التكويد والإصدار: انتهت مهلة التحميل. جرب تحديث الصفحة.');
+                if (typeof Notification !== 'undefined') Notification.warning('انتهت مهلة تحميل البيانات. يمكنك تحديث الصفحة أو المحاولة لاحقاً.');
+            } else {
+                Utils.safeError('Error loading coding center data:', error);
+            }
+        } finally {
             Loading.hide();
-            Utils.safeError('Error loading coding center data:', error);
         }
 
         return `
@@ -2318,7 +2329,17 @@ const ISO = {
                 Notification.error(result.message || 'حدث خطأ أثناء الحفظ');
             }
         } catch (error) {
-            Notification.error('حدث خطأ: ' + error.message);
+            const msg = error && error.message ? String(error.message) : '';
+            if (msg.indexOf('غير معترف به') !== -1 || msg.indexOf('ACTION_NOT_RECOGNIZED') !== -1) {
+                Notification.error(
+                    'الخادم لا يتعرّف على عملية إضافة كود المستند. ' +
+                    'تأكد من: 1) تحديث ملفات Code.gs و ISO.gs و Headers.gs و Config.gs في مشروع Google Apps Script. ' +
+                    '2) نشر نسخة جديدة (Deploy → Manage deployments → Edit → New version → Deploy). ' +
+                    '3) استخدام الرابط الذي ينتهي بـ /exec في الإعدادات.'
+                );
+            } else {
+                Notification.error('حدث خطأ: ' + msg);
+            }
         } finally {
             Loading.hide();
         }

@@ -916,22 +916,22 @@ function doPost(e) {
                     result = getDocumentCodes(payload || {});
                     break;
                 case 'addDocumentCode':
-                    result = addDocumentCodeToSheet(payload);
+                    result = (typeof addDocumentCode === 'function' ? addDocumentCode : addDocumentCodeToSheet)(postData.data || payload);
                     break;
                 case 'updateDocumentCode':
-                    result = updateDocumentCode(payload.id, payload);
+                    result = updateDocumentCode((postData.data || payload).id, (postData.data || payload));
                     break;
                 case 'deleteDocumentCode':
-                    result = deleteDocumentCode(payload.id);
+                    result = deleteDocumentCode((postData.data || payload).id);
                     break;
                 case 'getDocumentVersions':
                     result = getDocumentVersions(payload || {});
                     break;
                 case 'addDocumentVersion':
-                    result = addDocumentVersionToSheet(payload);
+                    result = addDocumentVersionToSheet(postData.data || payload);
                     break;
                 case 'updateDocumentVersion':
-                    result = updateDocumentVersion(payload.id, payload);
+                    result = updateDocumentVersion((postData.data || payload).id, (postData.data || payload));
                     break;
                 case 'getDocumentCodeAndVersion':
                     result = getDocumentCodeAndVersion(payload || {});
