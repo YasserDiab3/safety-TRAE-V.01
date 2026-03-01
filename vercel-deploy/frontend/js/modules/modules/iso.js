@@ -932,8 +932,8 @@ const ISO = {
     },
 
     async viewDocument(id) {
-        const document = AppState.appData.isoDocuments.find(d => d.id === id);
-        if (!document) {
+        const doc = AppState.appData.isoDocuments.find(d => d.id === id);
+        if (!doc) {
             Notification.error('الوثيقة غير موجودة');
             return;
         }
@@ -950,17 +950,17 @@ const ISO = {
                 </div>
                 <div class="modal-body">
                     <div class="space-y-3">
-                        <div><strong>كود ISO:</strong> ${Utils.escapeHTML(document.isoCode || '')}</div>
-                        <div><strong>اسم الوثيقة:</strong> ${Utils.escapeHTML(document.name || '')}</div>
-                        <div><strong>النوع:</strong> ${Utils.escapeHTML(document.type || '')}</div>
-                        <div><strong>الإصدار:</strong> ${Utils.escapeHTML(document.version || '')}</div>
-                        <div><strong>القسم:</strong> ${Utils.escapeHTML(document.department || '')}</div>
-                        <div><strong>تاريخ الإنشاء:</strong> ${Utils.formatDate(document.createdAt)}</div>
+                        <div><strong>كود ISO:</strong> ${Utils.escapeHTML(doc.isoCode || '')}</div>
+                        <div><strong>اسم الوثيقة:</strong> ${Utils.escapeHTML(doc.name || '')}</div>
+                        <div><strong>النوع:</strong> ${Utils.escapeHTML(doc.type || '')}</div>
+                        <div><strong>الإصدار:</strong> ${Utils.escapeHTML(doc.version || '')}</div>
+                        <div><strong>القسم:</strong> ${Utils.escapeHTML(doc.department || '')}</div>
+                        <div><strong>تاريخ الإنشاء:</strong> ${Utils.formatDate(doc.createdAt)}</div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">إغلاق</button>
-                    <button type="button" onclick="ISO.showDocumentForm(${JSON.stringify(document).replace(/"/g, '&quot;')}); this.closest('.modal-overlay').remove();" class="btn-primary">تعديل</button>
+                    <button type="button" onclick="ISO.showDocumentForm(${JSON.stringify(doc).replace(/"/g, '&quot;')}); this.closest('.modal-overlay').remove();" class="btn-primary">تعديل</button>
                 </div>
             </div>
         `;
@@ -2349,10 +2349,21 @@ const ISO = {
             return;
         }
 
+        const code = codeEl.value.trim();
+        const documentName = nameEl.value.trim();
+        if (!code) {
+            Notification.error('حقل الكود مطلوب.');
+            return;
+        }
+        if (!documentName) {
+            Notification.error('حقل اسم المستند / الإجراء مطلوب.');
+            return;
+        }
+
         const formData = {
             id: editId || Utils.generateId('DOC_CODE'),
-            code: codeEl.value.trim(),
-            documentName: nameEl.value.trim(),
+            code: code,
+            documentName: documentName,
             documentType: typeEl.value,
             department: departmentEl.value.trim(),
             status: statusEl.value,
@@ -2372,7 +2383,8 @@ const ISO = {
                 modal.remove();
                 this.load();
             } else {
-                Notification.error(result.message || 'حدث خطأ أثناء الحفظ');
+                const msg = result.message || 'حدث خطأ أثناء الحفظ';
+                Notification.error(result.errorCode === 'DUPLICATE_CODE' ? 'كود المستند موجود مسبقاً. يرجى اختيار كود فريد (مثل: DOC-001، FORM-002).' : msg);
             }
         } catch (error) {
             const msg = error && error.message ? String(error.message) : '';
@@ -2413,7 +2425,9 @@ const ISO = {
     },
 
     async deleteDocumentCode(id) {
-        if (!confirm('هل أنت متأكد من حذف هذا الكود؟ سيتم حذف جميع الإصدارات المرتبطة به.')) {
+        const item = await this.getDocumentCodeById(id);
+        const label = item ? (item.code || item.documentName || id) : id;
+        if (!confirm('هل أنت متأكد من حذف الكود "' + label + '"؟ سيتم حذف جميع الإصدارات المرتبطة به.')) {
             return;
         }
 
