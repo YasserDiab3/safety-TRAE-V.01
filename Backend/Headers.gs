@@ -119,6 +119,8 @@ function getDefaultHeaders(sheetName) {
         'ISODocuments': ['id', 'isoCode', 'name', 'type', 'version', 'department', 'createdAt', 'updatedAt'],
         'ISOProcedures': ['id', 'isoCode', 'name', 'department', 'version', 'createdAt', 'updatedAt'],
         'ISOForms': ['id', 'isoCode', 'name', 'type', 'createdAt', 'updatedAt'],
+        'DocumentCodes': ['id', 'code', 'documentName', 'documentType', 'department', 'status', 'description', 'createdAt', 'updatedAt', 'createdBy'],
+        'DocumentVersions': ['id', 'documentCodeId', 'documentCode', 'versionNumber', 'issueDate', 'revisionDate', 'status', 'notes', 'isActive', 'createdAt', 'updatedAt', 'createdBy'],
         'SOPJHA': ['id', 'isoCode', 'type', 'title', 'department', 'issueDate', 'status', 'version', 'procedures', 'hazards', 'requiredPPE', 'createdAt', 'updatedAt'],
         'RiskAssessments': ['id', 'isoCode', 'activity', 'location', 'date', 'status', 'riskLevel', 'correctiveActions', 'createdAt', 'updatedAt'],
         'LegalDocuments': ['id', 'isoCode', 'documentName', 'documentType', 'documentNumber', 'issuedBy', 'issueDate', 'expiryDate', 'alertDays', 'status', 'description', 'documentLink', 'documentImage', 'createdAt', 'updatedAt'],

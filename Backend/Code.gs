@@ -189,6 +189,7 @@ function doPost(e) {
             'getJobDescription', 'getSafetyTeamKPIs', 'getSafetyHealthManagementSettings',
             'getActionTrackingSettings', 'getAllActionTracking', 'getActionTracking',
             'testConnection',
+            'getDocumentCodes', 'getDocumentVersions', 'getDocumentCodeAndVersion',
             // Read-only utility actions
             'getPublicIP'
         ];
@@ -910,6 +911,30 @@ function doPost(e) {
                     break;
                 case 'deleteSOPJHA':
                     result = deleteSOPJHA(payload.sopId || payload.id);
+                    break;
+                case 'getDocumentCodes':
+                    result = getDocumentCodes(payload || {});
+                    break;
+                case 'addDocumentCode':
+                    result = addDocumentCodeToSheet(payload);
+                    break;
+                case 'updateDocumentCode':
+                    result = updateDocumentCode(payload.id, payload);
+                    break;
+                case 'deleteDocumentCode':
+                    result = deleteDocumentCode(payload.id);
+                    break;
+                case 'getDocumentVersions':
+                    result = getDocumentVersions(payload || {});
+                    break;
+                case 'addDocumentVersion':
+                    result = addDocumentVersionToSheet(payload);
+                    break;
+                case 'updateDocumentVersion':
+                    result = updateDocumentVersion(payload.id, payload);
+                    break;
+                case 'getDocumentCodeAndVersion':
+                    result = getDocumentCodeAndVersion(payload || {});
                     break;
                 case 'addRiskAssessment':
                     result = addRiskAssessmentToSheet(payload);

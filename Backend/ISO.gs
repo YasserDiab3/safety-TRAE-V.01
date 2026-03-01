@@ -459,3 +459,225 @@ function deleteSOPJHA(sopId) {
     }
 }
 
+/**
+ * ============================================
+ * أكواد المستندات وإصداراتها (Document Codes & Versions)
+ * ============================================
+ */
+
+/**
+ * الحصول على جميع أكواد المستندات
+ */
+function getDocumentCodes(filters) {
+    try {
+        const sheetName = 'DocumentCodes';
+        let data = readFromSheet(sheetName, getSpreadsheetId());
+        if (!data || !Array.isArray(data)) {
+            data = [];
+        }
+        if (filters && filters.documentType) {
+            data = data.filter(function(c) { return c.documentType === filters.documentType; });
+        }
+        if (filters && filters.status) {
+            data = data.filter(function(c) { return c.status === filters.status; });
+        }
+        data.sort(function(a, b) {
+            const codeA = (a.code || '').toLowerCase();
+            const codeB = (b.code || '').toLowerCase();
+            return codeA.localeCompare(codeB);
+        });
+        return { success: true, data: data, count: data.length };
+    } catch (error) {
+        Logger.log('Error in getDocumentCodes: ' + error.toString());
+        return { success: false, message: 'حدث خطأ أثناء قراءة أكواد المستندات: ' + error.toString(), data: [] };
+    }
+}
+
+/**
+ * إضافة كود مستند جديد
+ */
+function addDocumentCodeToSheet(documentData) {
+    try {
+        if (!documentData) {
+            return { success: false, message: 'بيانات الكود غير موجودة' };
+        }
+        const sheetName = 'DocumentCodes';
+        if (!documentData.id) {
+            documentData.id = Utilities.getUuid();
+        }
+        if (!documentData.createdAt) {
+            documentData.createdAt = new Date();
+        }
+        if (!documentData.updatedAt) {
+            documentData.updatedAt = new Date();
+        }
+        return appendToSheet(sheetName, documentData, getSpreadsheetId());
+    } catch (error) {
+        Logger.log('Error in addDocumentCodeToSheet: ' + error.toString());
+        return { success: false, message: 'حدث خطأ أثناء إضافة كود المستند: ' + error.toString() };
+    }
+}
+
+/**
+ * تحديث كود مستند
+ */
+function updateDocumentCode(codeId, updateData) {
+    try {
+        if (!codeId) {
+            return { success: false, message: 'معرف الكود غير محدد' };
+        }
+        const sheetName = 'DocumentCodes';
+        const spreadsheetId = getSpreadsheetId();
+        const data = readFromSheet(sheetName, spreadsheetId);
+        const index = data.findIndex(function(c) { return c.id === codeId; });
+        if (index === -1) {
+            return { success: false, message: 'كود المستند غير موجود' };
+        }
+        updateData.updatedAt = new Date();
+        for (var key in updateData) {
+            if (updateData.hasOwnProperty(key)) {
+                data[index][key] = updateData[key];
+            }
+        }
+        return saveToSheet(sheetName, data, spreadsheetId);
+    } catch (error) {
+        Logger.log('Error updating document code: ' + error.toString());
+        return { success: false, message: 'حدث خطأ أثناء تحديث كود المستند: ' + error.toString() };
+    }
+}
+
+/**
+ * حذف كود مستند
+ */
+function deleteDocumentCode(codeId) {
+    try {
+        if (!codeId) {
+            return { success: false, message: 'معرف الكود غير محدد' };
+        }
+        const sheetName = 'DocumentCodes';
+        const spreadsheetId = getSpreadsheetId();
+        const data = readFromSheet(sheetName, spreadsheetId);
+        const filteredData = data.filter(function(c) { return c.id !== codeId; });
+        if (filteredData.length === data.length) {
+            return { success: false, message: 'كود المستند غير موجود' };
+        }
+        return saveToSheet(sheetName, filteredData, spreadsheetId);
+    } catch (error) {
+        Logger.log('Error deleting document code: ' + error.toString());
+        return { success: false, message: 'حدث خطأ أثناء حذف كود المستند: ' + error.toString() };
+    }
+}
+
+/**
+ * الحصول على إصدارات المستندات (اختياري: حسب documentCodeId)
+ */
+function getDocumentVersions(filters) {
+    try {
+        const sheetName = 'DocumentVersions';
+        let data = readFromSheet(sheetName, getSpreadsheetId());
+        if (!data || !Array.isArray(data)) {
+            data = [];
+        }
+        if (filters && filters.documentCodeId) {
+            data = data.filter(function(v) { return v.documentCodeId === filters.documentCodeId; });
+        }
+        data.sort(function(a, b) {
+            const dA = new Date(a.issueDate || 0).getTime();
+            const dB = new Date(b.issueDate || 0).getTime();
+            return dB - dA;
+        });
+        return { success: true, data: data, count: data.length };
+    } catch (error) {
+        Logger.log('Error in getDocumentVersions: ' + error.toString());
+        return { success: false, message: 'حدث خطأ أثناء قراءة إصدارات المستندات: ' + error.toString(), data: [] };
+    }
+}
+
+/**
+ * إضافة إصدار مستند
+ */
+function addDocumentVersionToSheet(versionData) {
+    try {
+        if (!versionData) {
+            return { success: false, message: 'بيانات الإصدار غير موجودة' };
+        }
+        const sheetName = 'DocumentVersions';
+        if (!versionData.id) {
+            versionData.id = Utilities.getUuid();
+        }
+        if (!versionData.createdAt) {
+            versionData.createdAt = new Date();
+        }
+        if (!versionData.updatedAt) {
+            versionData.updatedAt = new Date();
+        }
+        return appendToSheet(sheetName, versionData, getSpreadsheetId());
+    } catch (error) {
+        Logger.log('Error in addDocumentVersionToSheet: ' + error.toString());
+        return { success: false, message: 'حدث خطأ أثناء إضافة إصدار المستند: ' + error.toString() };
+    }
+}
+
+/**
+ * تحديث إصدار مستند
+ */
+function updateDocumentVersion(versionId, updateData) {
+    try {
+        if (!versionId) {
+            return { success: false, message: 'معرف الإصدار غير محدد' };
+        }
+        const sheetName = 'DocumentVersions';
+        const spreadsheetId = getSpreadsheetId();
+        const data = readFromSheet(sheetName, spreadsheetId);
+        const index = data.findIndex(function(v) { return v.id === versionId; });
+        if (index === -1) {
+            return { success: false, message: 'إصدار المستند غير موجود' };
+        }
+        updateData.updatedAt = new Date();
+        for (var key in updateData) {
+            if (updateData.hasOwnProperty(key)) {
+                data[index][key] = updateData[key];
+            }
+        }
+        return saveToSheet(sheetName, data, spreadsheetId);
+    } catch (error) {
+        Logger.log('Error updating document version: ' + error.toString());
+        return { success: false, message: 'حدث خطأ أثناء تحديث إصدار المستند: ' + error.toString() };
+    }
+}
+
+/**
+ * الحصول على كود مستند والإصدار النشط له (للمركز الموحد)
+ */
+function getDocumentCodeAndVersion(params) {
+    try {
+        var documentCode = params && params.documentCode ? String(params.documentCode).trim() : '';
+        if (!documentCode) {
+            return { success: true, code: null, version: null };
+        }
+        var codes = readFromSheet('DocumentCodes', getSpreadsheetId());
+        if (!codes || !Array.isArray(codes)) {
+            codes = [];
+        }
+        var codeRow = codes.find(function(c) { return (c.code || '').trim() === documentCode; });
+        if (!codeRow) {
+            return { success: true, code: null, version: null };
+        }
+        var versions = readFromSheet('DocumentVersions', getSpreadsheetId());
+        if (!versions || !Array.isArray(versions)) {
+            versions = [];
+        }
+        versions = versions.filter(function(v) { return v.documentCodeId === codeRow.id; });
+        var activeVersion = versions.find(function(v) {
+            return v.isActive === true || v.isActive === 'true' || v.status === 'نشط';
+        });
+        if (!activeVersion) {
+            activeVersion = versions.length > 0 ? versions[0] : null;
+        }
+        return { success: true, code: codeRow, version: activeVersion };
+    } catch (error) {
+        Logger.log('Error in getDocumentCodeAndVersion: ' + error.toString());
+        return { success: false, message: 'حدث خطأ أثناء جلب كود المستند والإصدار: ' + error.toString() };
+    }
+}
+
