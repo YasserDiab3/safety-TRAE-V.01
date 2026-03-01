@@ -4482,14 +4482,10 @@ window.UI = {
                     if (typeof UserTasks !== 'undefined' && UserTasks.load) {
                         UserTasks.load();
                     } else {
-                        Utils.safeWarn('وحدة UserTasks غير موجودة - سيتم إنشاؤها');
-                        // تهيئة الموديول إذا لم يكن موجوداً
-                        if (typeof UserTasks === 'undefined') {
-                            window.UserTasks = UserTasksModule;
+                        if (!silent) {
+                            Utils.safeWarn('وحدة UserTasks غير موجودة - جاري انتظار التحميل...');
                         }
-                        if (UserTasks && UserTasks.load) {
-                            UserTasks.load();
-                        }
+                        this.waitForModuleAndLoad('UserTasks', 'user-tasks', silent);
                     }
                     break;
                 case 'employees':
