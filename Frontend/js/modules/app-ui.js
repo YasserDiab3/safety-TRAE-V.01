@@ -2153,6 +2153,17 @@ window.UI = {
         const loginScreen = document.getElementById('login-screen');
         const mainApp = document.getElementById('main-app');
 
+        // التحقق من وجود مستخدم مسجل دخول قبل إظهار أي واجهة
+        if (!AppState.currentUser) {
+            if (AppState.debugMode) Utils.safeLog('⚠️ لا يوجد مستخدم مسجل دخول - لا يمكن عرض التطبيق');
+            return;
+        }
+
+        // تحديث القائمة الجانبية حسب الصلاحيات قبل إظهار التطبيق لتفادي ظهور الموديولات غير المسموح بها ثم اختفائها
+        if (typeof Permissions !== 'undefined' && typeof Permissions.updateNavigation === 'function') {
+            Permissions.updateNavigation();
+        }
+
         // فوراً: إخفاء شاشة الدخول وإظهار التطبيق حتى لا يظهر الدخول عند أي timeout (مثل 2 ثانية)
         if (loginScreen) {
             loginScreen.style.display = 'none';
@@ -2161,12 +2172,6 @@ window.UI = {
         if (mainApp) mainApp.style.display = 'flex';
         document.body.classList.add('app-active');
         try { window._hseAppVisible = true; } catch (e) {}
-
-        // التحقق من وجود مستخدم مسجل دخول
-        if (!AppState.currentUser) {
-            if (AppState.debugMode) Utils.safeLog('⚠️ لا يوجد مستخدم مسجل دخول - لا يمكن عرض التطبيق');
-            return;
-        }
 
         // تحميل إعدادات الشركة أولاً (شاشة الدخول تبقى ظاهرة) ثم عرض السياسة مباشرة دون شاشة تحضيرية
         if (!AppState.companySettings || typeof AppState.companySettings !== 'object') {
