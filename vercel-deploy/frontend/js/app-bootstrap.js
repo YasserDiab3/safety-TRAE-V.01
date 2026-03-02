@@ -97,8 +97,7 @@
                 const totalSheets = stylesheets.length;
                 
                 if (totalSheets === 0) {
-                    // إذا لم تكن هناك ملفات CSS، انتظر قليلاً ثم أكمل
-                    setTimeout(resolve, 100);
+                    resolve();
                     return;
                 }
                 
@@ -125,11 +124,7 @@
                     }
                 };
                 
-                // استخدام requestAnimationFrame لتأخير التحقق حتى يتم تحميل CSS
-                requestAnimationFrame(() => {
-                    // انتظار إضافي قصير لضمان تحميل CSS
-                    setTimeout(checkStylesheets, 50);
-                });
+                requestAnimationFrame(() => setTimeout(checkStylesheets, 10));
             });
         },
 
@@ -342,6 +337,19 @@
             if (notificationLoaded) {
                 this.updateLoader(70, 'تم تحميل Notification');
             }
+
+            // إظهار الهيدر مبكراً عند وجود جلسة (بدون انتظار phaseModules/phaseReady)
+            // يقلل تأخر ظهور هيدر لوحة التحكم (شعار الشركة + الاسم)
+            try {
+                const mainApp = document.getElementById('main-app');
+                if (mainApp && mainApp.style.display !== 'none' && typeof window.UI !== 'undefined' && window.UI.updateCompanyLogoHeader) {
+                    window.UI.updateCompanyLogoHeader();
+                    if (window.UI.updateCompanyBranding) window.UI.updateCompanyBranding();
+                    log('✅ تم إظهار الهيدر مبكراً');
+                }
+            } catch (e) {
+                if (AppState?.debugMode) console.warn('⚠️ إظهار الهيدر مبكراً:', e);
+            }
             
             this.endPhase(this.phases.UI);
         },
@@ -363,8 +371,7 @@
             );
             
             if (authScript || dashboardScript) {
-                // الملفات موجودة في DOM - ننتظر قليلاً للتأكد من بدء التحميل
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, 30));
             }
             
             // تحميل متوازي لـ Auth و Dashboard (تحسين الأداء - تقليل وقت الانتظار)
@@ -409,8 +416,7 @@
             );
             
             if (modulesLoaderScript) {
-                // ننتظر قليلاً للتأكد من بدء تحميل modules-loader.js
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, 30));
             }
             
             // تحميل متوازي للموديولات الرئيسية (تحسين الأداء - تقليل وقت الانتظار)

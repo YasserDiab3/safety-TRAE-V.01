@@ -861,22 +861,35 @@ const GoogleIntegration = {
 
             // التحقق من هل هو response
             if (!response || !response.ok) {
-                // التحقق من هل هو 429 Too Many Requests
-                if (response?.status === 429) {
+                const status = response?.status || 0;
+
+                // 429 Too Many Requests — إعادة المحاولة بتأخير تصاعدي
+                if (status === 429) {
                     const maxRetries = 3;
                     if (retryCount < maxRetries) {
-                        // التحقق من هل هو Exponential backoff: 2s, 4s, 8s
                         const delay = Math.pow(2, retryCount + 1) * 1000;
-                        Utils.safeWarn(`فشل المزامنة في التقدم باستخدام Google Sheets - التحقق من هل هو 429 Too Many Requests - التحقق من هل هو Exponential backoff: 2s, 4s, 8s ${delay}ms (المحاولة ${retryCount + 1}/${maxRetries})`);
+                        Utils.safeWarn(`429 Too Many Requests - إعادة المحاولة بعد ${delay / 1000}s (${retryCount + 1}/${maxRetries})`);
                         await new Promise(resolve => setTimeout(resolve, delay));
                         return this._executeRequest(action, data, retryCount + 1);
-                    } else {
-                        throw new Error('فشل المزامنة في التقدم باستخدام Google Sheets - التحقق من هل هو Exponential backoff: 2s, 4s, 8s - التحقق من هل هو maxRetries');
                     }
+                    throw new Error('تجاوز حد الطلبات (429). يرجى الانتظار دقيقة ثم إعادة المحاولة.');
                 }
 
-                // التحقق من هل هو errorMessage
-                let errorMessage = `HTTP error! status: ${response?.status || 0}`;
+                // 503 Service Unavailable / 502 Bad Gateway / 504 Gateway Timeout — الخدمة مؤقتاً غير متاحة
+                if (status === 503 || status === 502 || status === 504) {
+                    const maxRetries = 3;
+                    if (retryCount < maxRetries) {
+                        const delay = Math.pow(2, retryCount + 1) * 1000;
+                        Utils.safeWarn(`الخادم غير متاح (${status}) - إعادة المحاولة بعد ${delay / 1000}s (${retryCount + 1}/${maxRetries})`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return this._executeRequest(action, data, retryCount + 1);
+                    }
+                    const statusText = status === 503 ? 'الخدمة مؤقتاً غير متاحة (503)' : status === 502 ? 'خطأ في البوابة (502)' : 'انتهت مهلة البوابة (504)';
+                    throw new Error(`⚠️ ${statusText}\n\nالخادم لا يستجيب حالياً. جرّب:\n1. تحديث الصفحة بعد دقيقة.\n2. التأكد من أن Google Apps Script منشور وأن الرابط ينتهي بـ /exec.\n3. إن كان السكربت على Google: تحقق من صفحة حالة خدمات Google.`);
+                }
+
+                // باقي الأخطاء
+                let errorMessage = `HTTP error! status: ${status}`;
                 try {
                     const errorData = await response.text();
                     if (errorData && errorData.trim() !== '') {

@@ -124,7 +124,7 @@ const ISO = {
                             </div>
                         `;
                     });
-                    
+
                     contentArea.innerHTML = content;
                 } catch (error) {
                     Utils.safeWarn('⚠️ خطأ في تحميل المحتوى:', error);

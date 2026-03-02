@@ -89,14 +89,71 @@ const SafetyHealthManagement = {
         // إذا لم يكن مفعلاً ولا توجد بيانات محلية
         return 'Google Apps Script غير مفعّل. يرجى تفعيله من الإعدادات';
     },
+    // حد أقصى لزمن تحميل التبويبات (2 ثانية) ثم عرض واجهة فوراً مع استكمال التحميل في الخلفية
+    LOAD_TIMEOUT_MS: 2000,
     // تحسينات الأداء: Cache و Debounce
     cache: {
         members: null,
         structure: null,
         jobDescriptions: null,
+        jobDescriptionsLastLoad: null,
         kpis: new Map(),
         lastLoad: null,
-        cacheTimeout: 3 * 60 * 1000 // 3 دقائق (تحسين الأداء)
+        cacheTimeout: 2 * 60 * 1000 // 2 دقيقة لاستخدام الكاش عند التنقل بين التبويبات
+    },
+    /** سباق مع مهلة: إن انتهت المهلة قبل اكتمال الوعد يُرفض بـ { timeout: true } والوعد الأصلي يستمر في الخلفية */
+    _raceWithTimeout(promise, ms) {
+        const t = ms != null ? ms : this.LOAD_TIMEOUT_MS;
+        let tid;
+        const timeoutPromise = new Promise((_, reject) => {
+            tid = setTimeout(() => reject({ timeout: true }), t);
+        });
+        return Promise.race([promise, timeoutPromise]).then(
+            (r) => { clearTimeout(tid); return r; },
+            (e) => { clearTimeout(tid); throw e; }
+        );
+    },
+    /** استخراج قائمة الأعضاء من الكاش إن كانت حديثة (ضمن cacheTimeout) */
+    _getMembersFromCache() {
+        if (this.cache.members && this.cache.lastLoad != null &&
+            (Date.now() - this.cache.lastLoad) < this.cache.cacheTimeout) {
+            return this.cache.members;
+        }
+        return null;
+    },
+    /** رسم الهيكل الوظيفي داخل الحاوية (للاستخدام بعد انتهاء التحميل) */
+    _renderStructureIntoContainer(container, structure) {
+        if (!container || !Array.isArray(structure)) return;
+        if (structure.length === 0) {
+            container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا يوجد هيكل وظيفي مسجل</p></div>';
+            return;
+        }
+        structure.sort((a, b) => (a.order || 0) - (b.order || 0));
+        this.cache.structure = structure;
+        this.cache.lastLoad = Date.now();
+        container.innerHTML = structure.map(item => `
+            <div class="org-node" data-id="${item.id}">
+                <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                        <h3 class="font-semibold text-gray-800">${Utils.escapeHTML(item.position || '')}</h3>
+                        <p class="text-sm text-gray-600">${Utils.escapeHTML(item.memberName || 'غير محدد')}</p>
+                        <p class="text-xs text-gray-500">${Utils.escapeHTML(item.positionLevel || '')}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="SafetyHealthManagement.editStructure('${item.id}')" class="btn-icon btn-icon-primary"><i class="fas fa-edit"></i></button>
+                        <button onclick="SafetyHealthManagement.deleteStructure('${item.id}')" class="btn-icon btn-icon-danger"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        requestAnimationFrame(() => {
+            const addBtn = document.getElementById('add-structure-btn');
+            if (addBtn) {
+                const newBtn = addBtn.cloneNode(true);
+                addBtn.parentNode.replaceChild(newBtn, addBtn);
+                newBtn.addEventListener('click', () => this.showStructureForm());
+            }
+        });
     },
     // منع العمليات المتزامنة
     loadingStates: {
@@ -122,10 +179,10 @@ const SafetyHealthManagement = {
         }
 
         try {
-            // تحميل المحتوى بشكل فوري بدون تأخير
+            // تحميل المحتوى بشكل فوري (بدون await لتسريع الظهور)
             let content = '';
             try {
-                content = await this.render();
+                content = this.render();
             } catch (error) {
                 if (typeof Utils !== 'undefined' && Utils.safeWarn) {
                     Utils.safeWarn('⚠️ خطأ في تحميل محتوى الواجهة:', error);
@@ -158,44 +215,16 @@ const SafetyHealthManagement = {
             }
 
             section.innerHTML = content;
-            
-            // تهيئة الأحداث فوراً بعد عرض الواجهة
+
+            const tabContent = document.getElementById('shm-tab-content');
+            if (tabContent) {
+                tabContent.innerHTML = this.renderTeamView();
+                this.attachTeamAddMemberButton();
+                requestAnimationFrame(() => this.loadTeamMembers().catch(() => {}));
+            }
+
             try {
                 this.setupEventListeners();
-                
-                // ✅ تحميل محتوى التبويب الأول (team) فوراً بعد عرض الواجهة
-                setTimeout(async () => {
-                    try {
-                        const tabContent = document.getElementById('shm-tab-content');
-                        if (!tabContent) return;
-                        
-                        // تحميل محتوى فريق السلامة
-                        const teamContent = await this.renderTeamView().catch(error => {
-                            Utils.safeWarn('⚠️ خطأ في تحميل فريق السلامة:', error);
-                            return `
-                                <div class="content-card">
-                                    <div class="card-body">
-                                        <div class="empty-state">
-                                            <i class="fas fa-exclamation-triangle text-yellow-500 text-4xl mb-4"></i>
-                                            <p class="text-gray-500 mb-4">حدث خطأ في تحميل البيانات</p>
-                                            <button onclick="SafetyHealthManagement.load()" class="btn-primary">
-                                                <i class="fas fa-redo ml-2"></i>
-                                                إعادة المحاولة
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-                        });
-                        
-                        tabContent.innerHTML = teamContent;
-                        
-                        // تحميل البيانات بعد عرض الواجهة
-                        this.loadTeamMembers().catch(() => {});
-                    } catch (error) {
-                        Utils.safeWarn('⚠️ خطأ في تحميل التبويب:', error);
-                    }
-                }, 0);
             } catch (error) {
                 if (typeof Utils !== 'undefined' && Utils.safeWarn) {
                     Utils.safeWarn('⚠️ خطأ في setupEventListeners:', error);
@@ -230,7 +259,7 @@ const SafetyHealthManagement = {
         }
     },
 
-    async render() {
+    render() {
         return `
             <div class="section-header">
                 <div class="flex items-center justify-between flex-wrap gap-4">
@@ -829,30 +858,40 @@ const SafetyHealthManagement = {
 
         switch (tabName) {
             case 'team':
-                contentContainer.innerHTML = await this.renderTeamView();
-                    // استخدام requestAnimationFrame لضمان تحميل DOM أولاً
-                    requestAnimationFrame(() => {
-                this.loadTeamMembers();
-                    });
+                contentContainer.innerHTML = this.renderTeamView();
+                requestAnimationFrame(() => {
+                    this.attachTeamAddMemberButton();
+                    this.loadTeamMembers();
+                });
                 break;
             case 'structure':
                 contentContainer.innerHTML = await this.renderStructureView();
-                // ربط زر إضافة المنصب فوراً باستخدام requestAnimationFrame
                 requestAnimationFrame(() => {
                     const addBtn = document.getElementById('add-structure-btn');
                     if (addBtn) {
-                        // إزالة أي مستمعين سابقين
                         const newBtn = addBtn.cloneNode(true);
                         addBtn.parentNode.replaceChild(newBtn, addBtn);
                         newBtn.addEventListener('click', () => this.showStructureForm());
                     }
-                    // تحميل البيانات بشكل متوازي
+                    const gotoTeamBtn = document.getElementById('shm-goto-team-btn');
+                    if (gotoTeamBtn) {
+                        const btn = gotoTeamBtn.cloneNode(true);
+                        gotoTeamBtn.parentNode.replaceChild(btn, gotoTeamBtn);
+                        btn.addEventListener('click', () => this.switchTab('team'));
+                    }
+                    const createFromTeamBtn = document.getElementById('create-structure-from-team-btn');
+                    if (createFromTeamBtn) {
+                        const btn = createFromTeamBtn.cloneNode(true);
+                        createFromTeamBtn.parentNode.replaceChild(btn, createFromTeamBtn);
+                        btn.addEventListener('click', () => this.createStructureFromTeam());
+                    }
                     this.loadOrganizationalStructure();
                 });
                 break;
             case 'job-descriptions':
                 contentContainer.innerHTML = await this.renderJobDescriptionsView();
                     requestAnimationFrame(() => {
+                this.attachJobDescriptionAddButton();
                 this.loadJobDescriptions();
                     });
                 break;
@@ -904,16 +943,38 @@ const SafetyHealthManagement = {
     },
 
     // ===== Team Management =====
-    async renderTeamView() {
+    getTeamListSkeletonHTML() {
+        if (!document.getElementById('shm-skeleton-style')) {
+            const style = document.createElement('style');
+            style.id = 'shm-skeleton-style';
+            style.textContent = '@keyframes shm-shimmer{0%,100%{opacity:0.5}50%{opacity:1}}';
+            document.head.appendChild(style);
+        }
+        const items = Array(8).fill(0).map(() => `
+            <div class="rounded-xl border border-gray-100 bg-gray-50 p-4 shadow-sm" style="min-height: 140px;">
+                <div class="h-5 bg-gray-200 rounded mb-3 w-3/4" style="animation: shm-shimmer 1.5s ease-in-out infinite;"></div>
+                <div class="h-4 bg-gray-100 rounded mb-2 w-1/2" style="animation: shm-shimmer 1.5s ease-in-out infinite 0.15s;"></div>
+                <div class="h-4 bg-gray-100 rounded w-2/3" style="animation: shm-shimmer 1.5s ease-in-out infinite 0.3s;"></div>
+            </div>
+        `).join('');
+        return items;
+    },
+
+    renderTeamView() {
         return `
             <div class="content-card">
                 <div class="card-header">
                     <div class="flex items-center justify-between flex-wrap gap-4">
                         <h2 class="card-title"><i class="fas fa-users ml-2"></i>إدارة فريق السلامة</h2>
-                        <button id="add-team-member-btn" class="btn-primary">
-                            <i class="fas fa-plus ml-2"></i>
-                            إضافة عضو جديد
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button type="button" id="shm-goto-structure-btn" class="btn-secondary btn-sm">
+                                <i class="fas fa-sitemap ml-2"></i>عرض الهيكل الوظيفي
+                            </button>
+                            <button id="add-team-member-btn" class="btn-primary" type="button">
+                                <i class="fas fa-plus ml-2"></i>
+                                إضافة عضو جديد
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body">
@@ -942,9 +1003,7 @@ const SafetyHealthManagement = {
                         </div>
                     </div>
                     <div id="team-members-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        <div class="empty-state">
-                            <p class="text-gray-500">جاري التحميل...</p>
-                        </div>
+                        ${this.getTeamListSkeletonHTML()}
                     </div>
                 </div>
             </div>
@@ -962,61 +1021,88 @@ const SafetyHealthManagement = {
         }
         this.loadingStates.team = true;
 
-        // استخدام Cache إذا كان متاحاً
-        if (this.cache.members && this.cache.lastLoad &&
-            (Date.now() - this.cache.lastLoad) < this.cache.cacheTimeout) {
+        const cacheValid = this.cache.members && this.cache.lastLoad &&
+            (Date.now() - this.cache.lastLoad) < this.cache.cacheTimeout;
+
+        // عرض الكاش فوراً إن وُجد (تجربة أسرع دون شاشة تحميل عامة)
+        if (this.cache.members && this.cache.members.length > 0) {
+            this.allMembers = this.cache.members;
             this.renderTeamMembers(this.cache.members);
             this.loadFilterOptions(this.cache.members);
+        }
+        if (cacheValid) {
             this.loadingStates.team = false;
             return;
         }
 
+        // إن لم يكن هناك كاش، عرض هيكل سكيليتون فوراً (تحميل خلال 2 ثانية كحد أقصى)
+        const cached = this._getMembersFromCache();
+        if (cached && cached.length > 0) {
+            this.allMembers = cached;
+            this.loadFilterOptions(cached);
+            this.renderTeamMembers(cached);
+        } else if (!this.cache.members || this.cache.members.length === 0) {
+            container.innerHTML = this.getTeamListSkeletonHTML();
+        }
+
         try {
-            Loading.show();
-            
-            // التحقق من إمكانية الوصول للبيانات (Google Apps Script أو بيانات محلية)
             const accessMessage = this.getDataAccessMessage('getSafetyTeamMembers', {});
             if (accessMessage) {
                 container.innerHTML = `<div class="empty-state col-span-full"><p class="text-yellow-600">${accessMessage}</p></div>`;
-                Loading.hide();
                 this.loadingStates.team = false;
                 return;
             }
-            
-            // محاولة جلب البيانات (سيعيد البيانات المحلية تلقائياً إذا لم يكن Google Apps Script مفعلاً)
-            const response = await GoogleIntegration.sendRequest({
+
+            const fetchPromise = GoogleIntegration.sendRequest({
                 action: 'getSafetyTeamMembers',
                 data: {}
             });
+            let response;
+            try {
+                response = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    if ((!cached || cached.length === 0) && container) {
+                        container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">جاري التحميل...</p></div>';
+                    }
+                    fetchPromise.then((r) => {
+                        if (r && r.success && r.data) {
+                            const members = Array.isArray(r.data) ? r.data : [];
+                            this.allMembers = members;
+                            this.cache.members = members;
+                            this.cache.lastLoad = Date.now();
+                            if (members.length === 0) {
+                                const c = document.getElementById('team-members-list');
+                                if (c) c.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
+                            } else {
+                                this.loadFilterOptions(members);
+                                this.renderTeamMembers(members);
+                            }
+                        }
+                    }).catch(() => {});
+                }
+                this.loadingStates.team = false;
+                return;
+            }
 
-            // Handle both success and failure cases gracefully
             if (response && response.success && response.data) {
                 const members = Array.isArray(response.data) ? response.data : [];
-                this.allMembers = members; // Store for filtering
-
-                // حفظ في Cache
+                this.allMembers = members;
                 this.cache.members = members;
                 this.cache.lastLoad = Date.now();
 
                 if (members.length === 0) {
                     container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
-                    Loading.hide();
-                    this.loadingStates.team = false;
-                    return;
+                } else {
+                    this.loadFilterOptions(members);
+                    this.renderTeamMembers(members);
                 }
-
-                // Load filter options
-                this.loadFilterOptions(members);
-
-                // Apply filters and render
-                this.renderTeamMembers(members);
             } else {
-                // Handle case when Google Apps Script is not enabled or returns empty result
-                // Don't show error, just show empty state
-                container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
+                if (!this.cache.members || this.cache.members.length === 0) {
+                    container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
+                }
             }
         } catch (error) {
-            // تجاهل أخطاء Chrome Extensions تلقائياً
             const errorMessage = error?.message || error?.toString() || 'خطأ غير معروف';
             const isChromeExtensionError = errorMessage.includes('runtime.lastError') ||
                 errorMessage.includes('message port closed') ||
@@ -1025,26 +1111,20 @@ const SafetyHealthManagement = {
                 errorMessage.includes('Extension context invalidated') ||
                 errorMessage.includes('The message port closed before a response was received');
 
-            // إذا كان خطأ Chrome Extension، نتجاهله تماماً ونحاول مرة أخرى
             if (isChromeExtensionError) {
                 Utils.safeLog('⚠ تم تجاهل خطأ Chrome Extension في loadTeamMembers');
-                // إعادة المحاولة بعد ثانية واحدة
-                setTimeout(() => {
-                    this.loadTeamMembers();
-                }, 1000);
-                Loading.hide();
+                setTimeout(() => this.loadTeamMembers(), 1000);
+                this.loadingStates.team = false;
                 return;
             }
 
-            // Don't log errors for Google Apps Script not enabled - just show empty state
             if (!errorMessage.includes('Google Apps Script') && !errorMessage.includes('غير مفعّل')) {
                 Utils.safeError('خطأ في تحميل أعضاء الفريق:', errorMessage, error);
             }
-
-            // Show empty state instead of error message for better UX
-            container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
+            if (!this.cache.members || this.cache.members.length === 0) {
+                container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
+            }
         } finally {
-            Loading.hide();
             this.loadingStates.team = false;
         }
     },
@@ -1165,16 +1245,37 @@ const SafetyHealthManagement = {
         `).join('');
     },
 
+    /** ربط زر "إضافة عضو جديد" في تبويب فريق السلامة (يُستدعى بعد عرض المحتوى في DOM) */
+    attachTeamAddMemberButton() {
+        const addBtn = document.getElementById('add-team-member-btn');
+        if (addBtn) {
+            const newBtn = addBtn.cloneNode(true);
+            addBtn.parentNode.replaceChild(newBtn, addBtn);
+            newBtn.addEventListener('click', () => this.showMemberForm());
+        }
+        const gotoStructureBtn = document.getElementById('shm-goto-structure-btn');
+        if (gotoStructureBtn) {
+            const btn = gotoStructureBtn.cloneNode(true);
+            gotoStructureBtn.parentNode.replaceChild(btn, gotoStructureBtn);
+            btn.addEventListener('click', () => this.switchTab('structure'));
+        }
+    },
+
+    /** ربط زر "إضافة وصف وظيفي" في تبويب الوصف الوظيفي (يُستدعى بعد عرض المحتوى في DOM) */
+    attachJobDescriptionAddButton() {
+        const addBtn = document.getElementById('add-job-description-btn');
+        if (addBtn) {
+            const newBtn = addBtn.cloneNode(true);
+            addBtn.parentNode.replaceChild(newBtn, addBtn);
+            newBtn.addEventListener('click', () => this.showJobDescriptionForm());
+        }
+    },
+
     setupEventListeners() {
         // استخدام requestAnimationFrame للسرعة بدلاً من setTimeout
         requestAnimationFrame(() => {
-            const addBtn = document.getElementById('add-team-member-btn');
-            if (addBtn) {
-                // إزالة المستمع السابق إن وجد لتجنب التكرار
-                const newBtn = addBtn.cloneNode(true);
-                addBtn.parentNode.replaceChild(newBtn, addBtn);
-                newBtn.addEventListener('click', () => this.showMemberForm());
-            }
+            // زر إضافة عضو يُربط في attachTeamAddMemberButton عند عرض تبويب فريق السلامة
+            this.attachTeamAddMemberButton();
             
             // Export Excel button
             const exportExcelBtn = document.getElementById('shm-export-excel-btn');
@@ -1559,12 +1660,20 @@ const SafetyHealthManagement = {
         return `
             <div class="content-card">
                 <div class="card-header">
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between flex-wrap gap-2">
                         <h2 class="card-title"><i class="fas fa-sitemap ml-2"></i>الهيكل الوظيفي لفريق السلامة</h2>
-                        <button id="add-structure-btn" class="btn-primary">
-                            <i class="fas fa-plus ml-2"></i>
-                            إضافة منصب
-                        </button>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <button type="button" id="shm-goto-team-btn" class="btn-secondary btn-sm">
+                                <i class="fas fa-users ml-2"></i>عرض فريق السلامة
+                            </button>
+                            <button type="button" id="create-structure-from-team-btn" class="btn-secondary btn-sm">
+                                <i class="fas fa-sync-alt ml-2"></i>إنشاء الهيكل من الفريق
+                            </button>
+                            <button id="add-structure-btn" class="btn-primary">
+                                <i class="fas fa-plus ml-2"></i>
+                                إضافة منصب
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body">
@@ -1626,67 +1735,41 @@ const SafetyHealthManagement = {
             return;
         }
 
-        // التحقق من إمكانية الوصول للبيانات
         const accessMessage = this.getDataAccessMessage('getOrganizationalStructure', {});
         if (accessMessage) {
             container.innerHTML = `<div class="empty-state"><p class="text-gray-500">${accessMessage}</p></div>`;
-            Loading.hide();
             this.loadingStates.structure = false;
             return;
         }
 
         try {
-            Loading.show();
-            const response = await GoogleIntegration.sendRequest({
+            container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
+            const fetchPromise = GoogleIntegration.sendRequest({
                 action: 'getOrganizationalStructure',
                 data: {}
             });
+            let response;
+            try {
+                response = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
+                    fetchPromise.then((r) => {
+                        if (r && r.success && r.data) {
+                            const structure = Array.isArray(r.data) ? r.data : [];
+                            const c = document.getElementById('organizational-structure-container');
+                            if (c) this._renderStructureIntoContainer(c, structure);
+                        }
+                        this.loadingStates.structure = false;
+                    }).catch(() => { this.loadingStates.structure = false; });
+                    return;
+                }
+                throw timeoutErr;
+            }
 
             if (response.success && response.data) {
                 const structure = Array.isArray(response.data) ? response.data : [];
-
-                if (structure.length === 0) {
-                    container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا يوجد هيكل وظيفي مسجل</p></div>';
-                    Loading.hide();
-                    return;
-                }
-
-                // Sort by order
-                structure.sort((a, b) => (a.order || 0) - (b.order || 0));
-
-                // حفظ في Cache
-                this.cache.structure = structure;
-                this.cache.lastLoad = Date.now();
-
-                container.innerHTML = structure.map(item => `
-                    <div class="org-node" data-id="${item.id}">
-                        <div class="flex items-center justify-between">
-                            <div class="flex-1">
-                                <h3 class="font-semibold text-gray-800">${Utils.escapeHTML(item.position || '')}</h3>
-                                <p class="text-sm text-gray-600">${Utils.escapeHTML(item.memberName || 'غير محدد')}</p>
-                                <p class="text-xs text-gray-500">${Utils.escapeHTML(item.positionLevel || '')}</p>
-                            </div>
-                            <div class="flex gap-2">
-                                <button onclick="SafetyHealthManagement.editStructure('${item.id}')" class="btn-icon btn-icon-primary">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                                <button onclick="SafetyHealthManagement.deleteStructure('${item.id}')" class="btn-icon btn-icon-danger">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-
-                // Setup add button فوراً
-                requestAnimationFrame(() => {
-                    const addBtn = document.getElementById('add-structure-btn');
-                    if (addBtn) {
-                        const newBtn = addBtn.cloneNode(true);
-                        addBtn.parentNode.replaceChild(newBtn, addBtn);
-                        newBtn.addEventListener('click', () => this.showStructureForm());
-                    }
-                });
+                this._renderStructureIntoContainer(container, structure);
             } else {
                 container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا يوجد هيكل وظيفي مسجل</p></div>';
                 // Setup add button even when there's no data
@@ -1715,7 +1798,7 @@ const SafetyHealthManagement = {
                 setTimeout(() => {
                     this.loadOrganizationalStructure();
                 }, 1000);
-                Loading.hide();
+                this.loadingStates.structure = false;
                 return;
             }
 
@@ -1753,7 +1836,6 @@ const SafetyHealthManagement = {
                 </div>
             `;
         } finally {
-            Loading.hide();
             this.loadingStates.structure = false;
         }
     },
@@ -1807,8 +1889,32 @@ const SafetyHealthManagement = {
         `;
         document.body.appendChild(modal);
 
-        // Load team members for dropdown
-        await this.loadTeamMembersForDropdown(modal.querySelector('#structure-member-id'), data?.memberId);
+        // تحميل أعضاء الفريق في القائمة وإكمال الحقول تلقائياً عند اختيار الاسم
+        const members = await this.loadTeamMembersForDropdown(modal.querySelector('#structure-member-id'), data?.memberId);
+        const memberSelect = modal.querySelector('#structure-member-id');
+        const positionInput = modal.querySelector('#structure-position');
+        const positionLevelInput = modal.querySelector('#structure-position-level');
+        const descriptionInput = modal.querySelector('#structure-description');
+
+        const fillFromMember = (memberId) => {
+            if (!memberId || !Array.isArray(members) || members.length === 0) return;
+            const member = members.find(m => String(m.id) === String(memberId));
+            if (!member) return;
+            if (positionInput) positionInput.value = member.jobTitle || member.position || '';
+            if (positionLevelInput) positionLevelInput.value = member.positionLevel || member.jobTitle || '';
+            if (descriptionInput && !descriptionInput.value) {
+                const parts = [member.department ? 'القسم: ' + member.department : '', member.jobTitle ? 'الوظيفة: ' + member.jobTitle : ''].filter(Boolean);
+                descriptionInput.value = parts.length ? parts.join(' — ') : '';
+            }
+        };
+
+        if (memberSelect) {
+            memberSelect.addEventListener('change', function () {
+                fillFromMember(this.value);
+            });
+            if (data?.memberId) fillFromMember(data.memberId);
+            else if (memberSelect.value) fillFromMember(memberSelect.value);
+        }
 
         const saveBtn = modal.querySelector('#save-structure-btn');
         const form = modal.querySelector('#structure-form');
@@ -1819,14 +1925,17 @@ const SafetyHealthManagement = {
         });
     },
 
+    /**
+     * تحميل أعضاء الفريق في قائمة منسدلة (للهيكل الوظيفي وغيره).
+     * @returns {Promise<Array>} مصفوفة أعضاء الفريق للاستخدام في إكمال الحقول تلقائياً
+     */
     async loadTeamMembersForDropdown(selectElement, selectedId = null) {
-        if (!selectElement) return;
+        if (!selectElement) return [];
 
-        // التحقق من إمكانية الوصول للبيانات
         const accessMessage = this.getDataAccessMessage('getSafetyTeamMembers', {});
         if (accessMessage) {
             selectElement.innerHTML = `<option value="">${accessMessage}</option>`;
-            return;
+            return [];
         }
 
         try {
@@ -1839,14 +1948,16 @@ const SafetyHealthManagement = {
                 const members = Array.isArray(response.data) ? response.data : [];
                 selectElement.innerHTML = '<option value="">اختر عضو الفريق</option>' +
                     members.map(m => `
-                        <option value="${m.id}" ${m.id === selectedId ? 'selected' : ''}>
-                            ${Utils.escapeHTML(m.name || '')} - ${Utils.escapeHTML(m.jobTitle || '')}
+                        <option value="${Utils.escapeHTML(String(m.id))}" ${m.id === selectedId || String(m.id) === String(selectedId) ? 'selected' : ''}>
+                            ${Utils.escapeHTML(m.name || '')} - ${Utils.escapeHTML(m.jobTitle || m.position || '')}
                         </option>
                     `).join('');
+                return members;
             }
         } catch (error) {
             Utils.safeError('خطأ في تحميل أعضاء الفريق:', error);
         }
+        return [];
     },
 
     async handleStructureSubmit(form, editId = null, modal) {
@@ -1907,6 +2018,72 @@ const SafetyHealthManagement = {
             const errorMessage = error?.message || error?.toString() || 'خطأ غير معروف';
             Utils.safeError('خطأ في حفظ المنصب:', errorMessage, error);
             Notification.error('حدث خطأ: ' + errorMessage);
+        } finally {
+            Loading.hide();
+            this.loadingStates.structure = false;
+        }
+    },
+
+    /**
+     * إنشاء الهيكل الوظيفي تلقائياً من أعضاء فريق السلامة (إضافة مناصب لأعضاء غير موجودين في الهيكل)
+     */
+    async createStructureFromTeam() {
+        if (this.loadingStates.structure) {
+            Notification.warning('جاري تنفيذ عملية أخرى، يرجى الانتظار...');
+            return;
+        }
+        const accessMessage = this.getDataAccessMessage('getSafetyTeamMembers', {});
+        if (accessMessage) {
+            Notification.error(accessMessage);
+            return;
+        }
+        const structureAccess = this.getDataAccessMessage('getOrganizationalStructure', {});
+        if (structureAccess) {
+            Notification.error(structureAccess);
+            return;
+        }
+        try {
+            this.loadingStates.structure = true;
+            Loading.show();
+            const [membersRes, structureRes] = await Promise.all([
+                GoogleIntegration.sendRequest({ action: 'getSafetyTeamMembers', data: {} }),
+                GoogleIntegration.sendRequest({ action: 'getOrganizationalStructure', data: {} })
+            ]);
+            const members = (membersRes.success && membersRes.data) ? (Array.isArray(membersRes.data) ? membersRes.data : []) : [];
+            const structure = (structureRes.success && structureRes.data) ? (Array.isArray(structureRes.data) ? structureRes.data : []) : [];
+            const existingMemberIds = new Set(structure.map(s => s.memberId).filter(Boolean).map(id => String(id)));
+            const toAdd = members.filter(m => !existingMemberIds.has(String(m.id)));
+            if (toAdd.length === 0) {
+                Notification.info('جميع أعضاء الفريق مضافون بالفعل إلى الهيكل الوظيفي');
+                Loading.hide();
+                this.loadingStates.structure = false;
+                return;
+            }
+            const maxOrder = structure.length ? Math.max(...structure.map(s => (s.order || 0))) : 0;
+            let added = 0;
+            for (let i = 0; i < toAdd.length; i++) {
+                const m = toAdd[i];
+                const formData = {
+                    position: m.jobTitle || m.position || 'منصب في فريق السلامة',
+                    positionLevel: m.positionLevel || m.jobTitle || '',
+                    memberId: m.id,
+                    memberName: m.name || '',
+                    order: maxOrder + i + 1,
+                    description: m.department ? 'القسم: ' + (m.department || '') : ''
+                };
+                const response = await GoogleIntegration.sendRequest({
+                    action: 'saveOrganizationalStructure',
+                    data: formData
+                });
+                if (response && response.success) added++;
+            }
+            this.cache.structure = null;
+            await this.loadOrganizationalStructure();
+            Notification.success('تم إنشاء الهيكل من الفريق: تمت إضافة ' + added + ' منصب/مناصب');
+        } catch (error) {
+            const msg = error?.message || error?.toString() || 'خطأ غير معروف';
+            Utils.safeError('خطأ في إنشاء الهيكل من الفريق:', msg, error);
+            Notification.error('حدث خطأ: ' + msg);
         } finally {
             Loading.hide();
             this.loadingStates.structure = false;
@@ -2011,7 +2188,7 @@ const SafetyHealthManagement = {
                 <div class="card-header">
                     <div class="flex items-center justify-between">
                         <h2 class="card-title"><i class="fas fa-file-alt ml-2"></i>الوصف الوظيفي</h2>
-                        <button id="add-job-description-btn" class="btn-primary">
+                        <button id="add-job-description-btn" class="btn-primary" type="button">
                             <i class="fas fa-plus ml-2"></i>
                             إضافة وصف وظيفي
                         </button>
@@ -2028,91 +2205,94 @@ const SafetyHealthManagement = {
         `;
     },
 
+    /** جلب أوصاف الوظائف لأعضاء معيّنين مع مهلة 2 ثانية */
+    async _loadJobDescriptionsFetch(members) {
+        const container = document.getElementById('job-descriptions-list');
+        if (!container || !members || members.length === 0) return;
+        const jdPromises = members.map(member =>
+            GoogleIntegration.sendRequest({ action: 'getJobDescription', data: { memberId: member.id } })
+                .then(jdResponse => (jdResponse && jdResponse.success && jdResponse.data)
+                    ? { ...jdResponse.data, member }
+                    : { member, hasDescription: false })
+                .catch(() => ({ member, hasDescription: false }))
+        );
+        const fetchPromise = Promise.all(jdPromises);
+        try {
+            const jobDescriptions = await this._raceWithTimeout(fetchPromise);
+            this.cache.jobDescriptions = jobDescriptions;
+            this.cache.jobDescriptionsLastLoad = Date.now();
+            const c = document.getElementById('job-descriptions-list');
+            if (c) {
+                c.innerHTML = jobDescriptions.length === 0
+                    ? '<div class="empty-state"><p class="text-gray-500">لا توجد أوصاف وظيفية مسجلة</p></div>'
+                    : this._renderJobDescriptionsList(jobDescriptions);
+            }
+        } catch (e) {
+            if (e && e.timeout) {
+                fetchPromise.then((jobDescriptions) => {
+                    this.cache.jobDescriptions = jobDescriptions;
+                    this.cache.jobDescriptionsLastLoad = Date.now();
+                    const c = document.getElementById('job-descriptions-list');
+                    if (c) c.innerHTML = jobDescriptions.length === 0
+                        ? '<div class="empty-state"><p class="text-gray-500">لا توجد أوصاف وظيفية مسجلة</p></div>'
+                        : this._renderJobDescriptionsList(jobDescriptions);
+                }).catch(() => {});
+            } else throw e;
+        }
+    },
+
     async loadJobDescriptions() {
         const container = document.getElementById('job-descriptions-list');
         if (!container) return;
 
-        // التحقق من إمكانية الوصول للبيانات
         const accessMessage = this.getDataAccessMessage('getJobDescriptions', {});
         if (accessMessage) {
             container.innerHTML = `<div class="empty-state"><p class="text-gray-500">${accessMessage}</p></div>`;
-            Loading.hide();
             return;
         }
 
+        const cacheValid = this.cache.jobDescriptions && this.cache.jobDescriptionsLastLoad &&
+            (Date.now() - this.cache.jobDescriptionsLastLoad) < this.cache.cacheTimeout;
+        if (cacheValid && this.cache.jobDescriptions.length > 0) {
+            container.innerHTML = this._renderJobDescriptionsList(this.cache.jobDescriptions);
+            return;
+        }
+        container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
+
         try {
-            Loading.show();
-            // Get all team members first
-            const membersResponse = await GoogleIntegration.sendRequest({
-                action: 'getSafetyTeamMembers',
-                data: {}
-            });
-
-            if (membersResponse.success && membersResponse.data) {
-                const members = Array.isArray(membersResponse.data) ? membersResponse.data : [];
-
-                if (members.length === 0) {
-                    container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا توجد أعضاء لإضافة أوصاف وظيفية</p></div>';
-                    Loading.hide();
-                    return;
-                }
-
-                // Load job descriptions for each member
-                const jobDescriptions = [];
-                for (const member of members) {
-                    try {
-                        const jdResponse = await GoogleIntegration.sendRequest({
-                            action: 'getJobDescription',
-                            data: { memberId: member.id }
-                        });
-                        if (jdResponse.success && jdResponse.data) {
-                            jobDescriptions.push({ ...jdResponse.data, member: member });
-                        } else {
-                            jobDescriptions.push({ member: member, hasDescription: false });
-                        }
-                    } catch (e) {
-                        jobDescriptions.push({ member: member, hasDescription: false });
+            let members = this._getMembersFromCache();
+            let membersPromise = null;
+            if (!members || members.length === 0) {
+                membersPromise = GoogleIntegration.sendRequest({ action: 'getSafetyTeamMembers', data: {} });
+                try {
+                    const membersResponse = await this._raceWithTimeout(membersPromise);
+                    if (membersResponse && membersResponse.success && membersResponse.data) {
+                        members = Array.isArray(membersResponse.data) ? membersResponse.data : [];
+                        this.cache.members = members;
+                        this.cache.lastLoad = Date.now();
                     }
-                }
-
-                if (jobDescriptions.length === 0) {
-                    container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا توجد أوصاف وظيفية مسجلة</p></div>';
-                    Loading.hide();
-                    return;
-                }
-
-                container.innerHTML = jobDescriptions.map(jd => `
-                    <div class="bg-white border border-gray-200 rounded-lg p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <div>
-                                <h3 class="font-semibold text-gray-800">${Utils.escapeHTML(jd.member.name || '')}</h3>
-                                <p class="text-sm text-gray-600">${Utils.escapeHTML(jd.member.jobTitle || '')}</p>
-                            </div>
-                            <button onclick="SafetyHealthManagement.showJobDescriptionForm('${jd.member.id}', ${jd.hasDescription !== false ? JSON.stringify(jd).replace(/"/g, '&quot;') : 'null'})" class="btn-primary btn-sm">
-                                <i class="fas fa-${jd.hasDescription !== false ? 'edit' : 'plus'} ml-2"></i>
-                                ${jd.hasDescription !== false ? 'تعديل' : 'إضافة'}
-                            </button>
-                        </div>
-                        ${jd.hasDescription !== false ? `
-                            <div class="mt-3 space-y-2">
-                                <div><strong>الدور الوظيفي:</strong> ${Utils.escapeHTML(jd.roleDescription || '—')}</div>
-                                <div><strong>المسؤوليات:</strong> ${Utils.escapeHTML(jd.responsibilities || '—')}</div>
-                                <div><strong>المهام:</strong> ${Utils.escapeHTML(jd.tasks || '—')}</div>
-                            </div>
-                        ` : '<p class="text-gray-500 text-sm">لا يوجد وصف وظيفي مسجل</p>'}
-                    </div>
-                `).join('');
-
-                // Setup add button فوراً باستخدام requestAnimationFrame
-                requestAnimationFrame(() => {
-                    const addBtn = document.getElementById('add-job-description-btn');
-                    if (addBtn) {
-                        const newBtn = addBtn.cloneNode(true);
-                        addBtn.parentNode.replaceChild(newBtn, addBtn);
-                        newBtn.addEventListener('click', () => this.showJobDescriptionForm());
+                } catch (timeoutErr) {
+                    if (timeoutErr && timeoutErr.timeout) {
+                        membersPromise.then((r) => {
+                            if (r && r.success && r.data) {
+                                const m = Array.isArray(r.data) ? r.data : [];
+                                this.cache.members = m;
+                                this.cache.lastLoad = Date.now();
+                                if (m.length > 0) this._loadJobDescriptionsFetch(m);
+                            }
+                        }).catch(() => {});
+                        return;
                     }
-                });
+                    throw timeoutErr;
+                }
             }
+
+            if (!members || members.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا توجد أعضاء لإضافة أوصاف وظيفية</p></div>';
+                return;
+            }
+
+            await this._loadJobDescriptionsFetch(members);
         } catch (error) {
             // تجاهل أخطاء Chrome Extensions تلقائياً
             const errorMessage = error?.message || error?.toString() || 'خطأ غير معروف';
@@ -2126,17 +2306,13 @@ const SafetyHealthManagement = {
             // إذا كان خطأ Chrome Extension، نتجاهله تماماً ونحاول مرة أخرى
             if (isChromeExtensionError) {
                 Utils.safeLog('⚠ تم تجاهل خطأ Chrome Extension في loadJobDescriptions');
-                setTimeout(() => {
-                    this.loadJobDescriptions();
-                }, 1000);
-                Loading.hide();
+                setTimeout(() => this.loadJobDescriptions(), 1000);
                 return;
             }
 
-            // لا نعرض خطأ في Console إذا كان Google Apps Script غير مفعّل (تم التحقق مسبقاً)
             const isGoogleEnabled = this.isGoogleAppsScriptEnabled();
             if (isGoogleEnabled) {
-            Utils.safeError('خطأ في تحميل الأوصاف الوظيفية:', errorMessage, error);
+                Utils.safeError('خطأ في تحميل الأوصاف الوظيفية:', errorMessage, error);
             }
 
             let displayMessage = 'لا توجد أوصاف وظيفية مسجلة';
@@ -2166,9 +2342,32 @@ const SafetyHealthManagement = {
                     ` : ''}
                 </div>
             `;
-        } finally {
-            Loading.hide();
         }
+    },
+
+    _renderJobDescriptionsList(jobDescriptions) {
+        if (!Array.isArray(jobDescriptions) || jobDescriptions.length === 0) return '';
+        return jobDescriptions.map(jd => `
+            <div class="bg-white border border-gray-200 rounded-lg p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h3 class="font-semibold text-gray-800">${Utils.escapeHTML(jd.member.name || '')}</h3>
+                        <p class="text-sm text-gray-600">${Utils.escapeHTML(jd.member.jobTitle || '')}</p>
+                    </div>
+                    <button onclick="SafetyHealthManagement.showJobDescriptionForm('${jd.member.id}', ${jd.hasDescription !== false ? JSON.stringify(jd).replace(/"/g, '&quot;') : 'null'})" class="btn-primary btn-sm">
+                        <i class="fas fa-${jd.hasDescription !== false ? 'edit' : 'plus'} ml-2"></i>
+                        ${jd.hasDescription !== false ? 'تعديل' : 'إضافة'}
+                    </button>
+                </div>
+                ${jd.hasDescription !== false ? `
+                    <div class="mt-3 space-y-2">
+                        <div><strong>الدور الوظيفي:</strong> ${Utils.escapeHTML(jd.roleDescription || '—')}</div>
+                        <div><strong>المسؤوليات:</strong> ${Utils.escapeHTML(jd.responsibilities || '—')}</div>
+                        <div><strong>المهام:</strong> ${Utils.escapeHTML(jd.tasks || '—')}</div>
+                    </div>
+                ` : '<p class="text-gray-500 text-sm">لا يوجد وصف وظيفي مسجل</p>'}
+            </div>
+        `).join('');
     },
 
     async showJobDescriptionForm(memberId = null, data = null) {
@@ -2233,10 +2432,14 @@ const SafetyHealthManagement = {
         document.body.appendChild(modal);
 
         // Load team members for dropdown if needed
-        if (!data && memberId) {
-            document.getElementById('jd-member-id').value = memberId;
-        } else if (!data) {
-            await this.loadTeamMembersForDropdown(modal.querySelector('#jd-member-id'));
+        const jdMemberSelect = modal.querySelector('#jd-member-id');
+        if (!data && memberId && jdMemberSelect) {
+            jdMemberSelect.value = memberId;
+        } else if (!data && jdMemberSelect) {
+            await this.loadTeamMembersForDropdown(jdMemberSelect);
+            if (jdMemberSelect.options.length <= 1 && typeof Notification !== 'undefined' && Notification.info) {
+                Notification.info('لا يوجد أعضاء حالياً. أضف أعضاء من تبويب فريق السلامة أولاً.');
+            }
         }
 
         const saveBtn = modal.querySelector('#save-jd-btn');
@@ -2283,6 +2486,8 @@ const SafetyHealthManagement = {
             if (response.success) {
                 Notification.success(editId ? 'تم تحديث الوصف الوظيفي بنجاح' : 'تم إضافة الوصف الوظيفي بنجاح');
                 modal.remove();
+                this.cache.jobDescriptions = null;
+                this.cache.jobDescriptionsLastLoad = null;
                 this.loadJobDescriptions();
             } else {
                 Notification.error('حدث خطأ: ' + (response.message || 'فشل الحفظ'));
@@ -2329,6 +2534,36 @@ const SafetyHealthManagement = {
         `;
     },
 
+    _fillKPIsDropdown(members) {
+        const memberSelect = document.getElementById('kpi-member-select');
+        const periodSelect = document.getElementById('kpi-period-select');
+        const calculateBtn = document.getElementById('calculate-kpis-btn');
+        if (!memberSelect) return;
+        memberSelect.innerHTML = '<option value="">اختر عضو الفريق</option>' +
+            (members || []).map(m => `
+                <option value="${m.id}" ${m.id === this.currentMemberId ? 'selected' : ''}>
+                    ${Utils.escapeHTML(m.name || '')}
+                </option>
+            `).join('');
+        if (periodSelect) {
+            const now = new Date();
+            let periodOptions = '<option value="">الفترة الحالية</option>';
+            for (let i = 0; i < 6; i++) {
+                const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+                periodOptions += `<option value="${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}">${monthNames[date.getMonth()]} ${date.getFullYear()}</option>`;
+            }
+            periodSelect.innerHTML = periodOptions;
+        }
+        memberSelect.removeEventListener('change', this._boundLoadMemberKPIs);
+        this._boundLoadMemberKPIs = () => this.loadMemberKPIs();
+        memberSelect.addEventListener('change', this._boundLoadMemberKPIs);
+        if (periodSelect) {
+            periodSelect.onchange = () => { if (memberSelect.value) this.loadMemberKPIs(); };
+        }
+        if (calculateBtn) calculateBtn.onclick = () => this.calculateKPIs();
+    },
+
     async loadKPIs() {
         const container = document.getElementById('kpis-container');
         const memberSelect = document.getElementById('kpi-member-select');
@@ -2340,7 +2575,6 @@ const SafetyHealthManagement = {
             return;
         }
 
-        // التحقق من إمكانية الوصول للبيانات
         const accessMessage = this.getDataAccessMessage('getSafetyTeamKPIs', {});
         if (accessMessage) {
             memberSelect.innerHTML = `<option value="">${accessMessage}</option>`;
@@ -2348,60 +2582,51 @@ const SafetyHealthManagement = {
             return;
         }
 
+        let members = this._getMembersFromCache();
+        if (members && members.length > 0) {
+            this._fillKPIsDropdown(members);
+            if (this.currentMemberId && memberSelect.value === this.currentMemberId) {
+                this.loadMemberKPIs();
+            } else {
+                container.innerHTML = '<div class="empty-state"><p class="text-gray-500">اختر عضو الفريق لحساب مؤشرات الأداء</p></div>';
+            }
+        } else {
+            container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
+        }
+
         try {
-            // Load team members for dropdown
-            const membersResponse = await GoogleIntegration.sendRequest({
-                action: 'getSafetyTeamMembers',
-                data: {}
-            });
-
-            if (membersResponse.success && membersResponse.data) {
-                const members = Array.isArray(membersResponse.data) ? membersResponse.data : [];
-                memberSelect.innerHTML = '<option value="">اختر عضو الفريق</option>' +
-                    members.map(m => `
-                        <option value="${m.id}" ${m.id === this.currentMemberId ? 'selected' : ''}>
-                            ${Utils.escapeHTML(m.name || '')}
-                        </option>
-                    `).join('');
-
-                // Generate period options dynamically
-                if (periodSelect) {
-                    const now = new Date();
-                    const currentYear = now.getFullYear();
-                    const currentMonth = now.getMonth();
-                    let periodOptions = '<option value="">الفترة الحالية</option>';
-
-                    // Add last 6 months
-                    for (let i = 0; i < 6; i++) {
-                        const date = new Date(currentYear, currentMonth - i, 1);
-                        const year = date.getFullYear();
-                        const month = String(date.getMonth() + 1).padStart(2, '0');
-                        const period = `${year}-${month}`;
-                        const monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-                        periodOptions += `<option value="${period}">${monthNames[date.getMonth()]} ${year}</option>`;
-                    }
-                    periodSelect.innerHTML = periodOptions;
-                }
-
-                // Setup event listeners
-                memberSelect.addEventListener('change', () => this.loadMemberKPIs());
-                if (periodSelect) {
-                    periodSelect.addEventListener('change', () => {
-                        if (memberSelect.value) {
-                            this.loadMemberKPIs();
+            const fetchPromise = GoogleIntegration.sendRequest({ action: 'getSafetyTeamMembers', data: {} });
+            let response;
+            try {
+                response = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    fetchPromise.then((membersResponse) => {
+                        if (membersResponse && membersResponse.success && membersResponse.data) {
+                            const m = Array.isArray(membersResponse.data) ? membersResponse.data : [];
+                            this.cache.members = m;
+                            this.cache.lastLoad = Date.now();
+                            this._fillKPIsDropdown(m);
+                            const sel = document.getElementById('kpi-member-select');
+                            if (this.currentMemberId && sel && sel.value === this.currentMemberId) this.loadMemberKPIs();
                         }
-                    });
+                    }).catch(() => {});
                 }
-                if (calculateBtn) {
-                    calculateBtn.addEventListener('click', () => this.calculateKPIs());
-                }
+                return;
+            }
 
-                // Auto-load KPIs if member is already selected
+            if (response && response.success && response.data) {
+                members = Array.isArray(response.data) ? response.data : [];
+                this.cache.members = members;
+                this.cache.lastLoad = Date.now();
+                this._fillKPIsDropdown(members);
                 if (this.currentMemberId && memberSelect.value === this.currentMemberId) {
                     this.loadMemberKPIs();
+                } else {
+                    container.innerHTML = '<div class="empty-state"><p class="text-gray-500">اختر عضو الفريق لحساب مؤشرات الأداء</p></div>';
                 }
             } else {
-                const errorMessage = membersResponse.message || 'فشل تحميل أعضاء الفريق';
+                const errorMessage = response && response.message ? response.message : 'فشل تحميل أعضاء الفريق';
                 container.innerHTML = `<div class="empty-state"><p class="text-red-500">${Utils.escapeHTML(errorMessage)}</p></div>`;
             }
         } catch (error) {
@@ -2500,11 +2725,32 @@ const SafetyHealthManagement = {
         }
 
         try {
-            Loading.show();
-            const response = await GoogleIntegration.sendRequest({
+            const fetchPromise = GoogleIntegration.sendRequest({
                 action: 'getSafetyTeamKPIs',
                 data: { memberId: memberId, period: period || null }
             });
+            let response;
+            try {
+                response = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    if (container) container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
+                    fetchPromise.then((r) => {
+                        if (r && r.success && r.data) {
+                            const kpis = Array.isArray(r.data) ? r.data : [r.data];
+                            const kpi = kpis.length > 0 ? kpis[0] : null;
+                            const c = document.getElementById('kpis-container');
+                            if (c && kpi) {
+                                this.renderKPIs(kpi, c);
+                                this.cache.kpis.set(cacheKey, { data: kpi, timestamp: Date.now() });
+                            }
+                        }
+                        this.loadingStates.kpis = false;
+                    }).catch(() => { this.loadingStates.kpis = false; });
+                    return;
+                }
+                throw timeoutErr;
+            }
 
             if (response.success && response.data) {
                 const kpis = Array.isArray(response.data) ? response.data : [response.data];
@@ -2512,131 +2758,12 @@ const SafetyHealthManagement = {
 
                 if (!kpi) {
                     container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا توجد مؤشرات أداء محسوبة. اضغط على "حساب KPIs"</p></div>';
-                    Loading.hide();
+                    this.loadingStates.kpis = false;
                     return;
                 }
 
-                // حساب مؤشرات الأداء بشكل صحيح
-                const inspectionsProgress = (kpi.targetInspections || 20) > 0 
-                    ? Math.min(((kpi.inspectionsCount || 0) / (kpi.targetInspections || 20)) * 100, 100) 
-                    : 0;
-                // حساب نسبة الإجراءات المغلقة بشكل صحيح (نسبة مئوية من الهدف)
-                const actionsProgress = (kpi.targetActionsClosure || 80);
-                const observationsProgress = (kpi.targetObservations || 15) > 0 
-                    ? Math.min(((kpi.observationsCount || 0) / (kpi.targetObservations || 15)) * 100, 100) 
-                    : 0;
-                const trainingsProgress = (kpi.targetTrainings || 2) > 0 
-                    ? Math.min(((kpi.trainingsCount || 0) / (kpi.targetTrainings || 2)) * 100, 100) 
-                    : 0;
-                // التأكد من أن commitmentProgress رقم وليس كائن
-                const commitmentProgress = typeof kpi.commitmentRate === 'number' ? kpi.commitmentRate : 
-                    (typeof kpi.commitmentRate === 'object' && kpi.commitmentRate !== null ? 0 : 
-                    (parseFloat(kpi.commitmentRate) || 0));
+                this.renderKPIs(kpi, container);
 
-                container.innerHTML = `
-                    <div class="mb-4 flex justify-end">
-                        <button onclick="SafetyHealthManagement.editKPIs('${kpi.id || ''}', '${memberId}')" class="btn-primary btn-sm">
-                            <i class="fas fa-edit ml-2"></i>
-                            تعديل المؤشرات يدوياً
-                        </button>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                        <div class="kpi-card success">
-                            <div class="flex items-center justify-between mb-2">
-                                <h3 class="font-semibold">الجولات التفتيشية</h3>
-                                <i class="fas fa-clipboard-check text-2xl"></i>
-                            </div>
-                            <p class="text-3xl font-bold mb-1">${kpi.inspectionsCount || 0}</p>
-                            <p class="text-sm opacity-90 mb-2">الهدف: ${kpi.targetInspections || 20}</p>
-                            <div class="w-full bg-white bg-opacity-30 rounded-full h-2">
-                                <div class="bg-white rounded-full h-2" style="width: ${inspectionsProgress}%"></div>
-                            </div>
-                        </div>
-                        <div class="kpi-card warning">
-                            <div class="flex items-center justify-between mb-2">
-                                <h3 class="font-semibold">الإجراءات المغلقة</h3>
-                                <i class="fas fa-check-circle text-2xl"></i>
-                            </div>
-                            <p class="text-3xl font-bold mb-1">${kpi.closedActionsCount || 0}</p>
-                            <p class="text-sm opacity-90 mb-2">نسبة الإغلاق المستهدفة: ${kpi.targetActionsClosure || 80}%</p>
-                            <div class="w-full bg-white bg-opacity-30 rounded-full h-2">
-                                <div class="bg-white rounded-full h-2" style="width: ${Math.min(actionsProgress, 100)}%"></div>
-                            </div>
-                        </div>
-                        <div class="kpi-card info">
-                            <div class="flex items-center justify-between mb-2">
-                                <h3 class="font-semibold">الملاحظات</h3>
-                                <i class="fas fa-eye text-2xl"></i>
-                            </div>
-                            <p class="text-3xl font-bold mb-1">${kpi.observationsCount || 0}</p>
-                            <p class="text-sm opacity-90 mb-2">الهدف: ${kpi.targetObservations || 15}</p>
-                            <div class="w-full bg-white bg-opacity-30 rounded-full h-2">
-                                <div class="bg-white rounded-full h-2" style="width: ${observationsProgress}%"></div>
-                            </div>
-                        </div>
-                        <div class="kpi-card">
-                            <div class="flex items-center justify-between mb-2">
-                                <h3 class="font-semibold">التدريبات</h3>
-                                <i class="fas fa-graduation-cap text-2xl"></i>
-                            </div>
-                            <p class="text-3xl font-bold mb-1">${kpi.trainingsCount || 0}</p>
-                            <p class="text-sm opacity-90 mb-2">الهدف: ${kpi.targetTrainings || 2}</p>
-                            <div class="w-full bg-white bg-opacity-30 rounded-full h-2">
-                                <div class="bg-white rounded-full h-2" style="width: ${trainingsProgress}%"></div>
-                            </div>
-                        </div>
-                        <div class="kpi-card ${commitmentProgress >= 95 ? 'success' : 'warning'}">
-                            <div class="flex items-center justify-between mb-2">
-                                <h3 class="font-semibold">نسبة الالتزام</h3>
-                                <i class="fas fa-percentage text-2xl"></i>
-                            </div>
-                            <p class="text-3xl font-bold mb-1">${commitmentProgress.toFixed(1)}%</p>
-                            <p class="text-sm opacity-90 mb-2">الهدف: ${kpi.targetCommitment || 95}%</p>
-                            <div class="w-full bg-white bg-opacity-30 rounded-full h-2">
-                                <div class="bg-white rounded-full h-2" style="width: ${commitmentProgress}%"></div>
-                            </div>
-                        </div>
-                        ${kpi.incidentsHandledCount !== undefined ? `
-                        <div class="kpi-card danger">
-                            <div class="flex items-center justify-between mb-2">
-                                <h3 class="font-semibold">الحوادث المعالجة</h3>
-                                <i class="fas fa-exclamation-triangle text-2xl"></i>
-                            </div>
-                            <p class="text-3xl font-bold">${kpi.incidentsHandledCount || 0}</p>
-                        </div>
-                        ` : ''}
-                        ${kpi.nearMissCount !== undefined ? `
-                        <div class="kpi-card warning">
-                            <div class="flex items-center justify-between mb-2">
-                                <h3 class="font-semibold">Near Miss</h3>
-                                <i class="fas fa-exclamation-circle text-2xl"></i>
-                            </div>
-                            <p class="text-3xl font-bold">${kpi.nearMissCount || 0}</p>
-                        </div>
-                        ` : ''}
-                        ${kpi.ptwCount !== undefined ? `
-                        <div class="kpi-card info">
-                            <div class="flex items-center justify-between mb-2">
-                                <h3 class="font-semibold">PTW المعالجة</h3>
-                                <i class="fas fa-file-alt text-2xl"></i>
-                            </div>
-                            <p class="text-3xl font-bold">${kpi.ptwCount || 0}</p>
-                        </div>
-                        ` : ''}
-                    </div>
-                    <!-- Chart Visualization -->
-                    <div class="bg-white border border-gray-200 rounded-lg p-6 mt-6">
-                        <h3 class="font-semibold text-gray-700 mb-4">مقارنة الأداء مع الأهداف</h3>
-                        <div class="space-y-4">
-                            ${this.renderKPIChartBar('الجولات التفتيشية', kpi.inspectionsCount || 0, kpi.targetInspections || 20)}
-                            ${this.renderKPIChartBar('الإجراءات المغلقة', kpi.closedActionsCount || 0, Math.max(kpi.closedActionsCount || 0, 10))}
-                            ${this.renderKPIChartBar('الملاحظات', kpi.observationsCount || 0, kpi.targetObservations || 15)}
-                            ${this.renderKPIChartBar('التدريبات', kpi.trainingsCount || 0, kpi.targetTrainings || 2)}
-                        </div>
-                    </div>
-                    ${kpi.isManual ? '<div class="mt-2 text-sm text-yellow-600"><i class="fas fa-info-circle ml-1"></i>تم تعديل هذه المؤشرات يدوياً</div>' : ''}
-                `;
-                
                 // حفظ في Cache
                 this.cache.kpis.set(cacheKey, {
                     data: kpi,
@@ -2696,7 +2823,6 @@ const SafetyHealthManagement = {
                 </div>
             `;
         } finally {
-            Loading.hide();
             this.loadingStates.kpis = false;
         }
     },
@@ -2704,124 +2830,134 @@ const SafetyHealthManagement = {
     renderKPIs(kpi, container) {
         if (!kpi || !container) return;
         
-        // حساب مؤشرات الأداء بشكل صحيح
-        const inspectionsProgress = (kpi.targetInspections || 20) > 0 
-            ? Math.min(((kpi.inspectionsCount || 0) / (kpi.targetInspections || 20)) * 100, 100) 
-            : 0;
-        // حساب نسبة الإجراءات المغلقة بشكل صحيح (نسبة مئوية من الهدف)
-        const actionsProgress = (kpi.targetActionsClosure || 80);
-        const observationsProgress = (kpi.targetObservations || 15) > 0 
-            ? Math.min(((kpi.observationsCount || 0) / (kpi.targetObservations || 15)) * 100, 100) 
-            : 0;
-        const trainingsProgress = (kpi.targetTrainings || 2) > 0 
-            ? Math.min(((kpi.trainingsCount || 0) / (kpi.targetTrainings || 2)) * 100, 100) 
-            : 0;
-        const commitmentProgress = typeof kpi.commitmentRate === 'number' ? kpi.commitmentRate : 
-            (typeof kpi.commitmentRate === 'object' && kpi.commitmentRate !== null ? 0 : 
+        const targetInspections = kpi.targetInspections || 20;
+        const targetObservations = kpi.targetObservations || 15;
+        const targetTrainings = kpi.targetTrainings || 3;
+        const targetCommitment = kpi.targetCommitment || 95;
+        const targetActionsClosure = kpi.targetActionsClosure || 80;
+
+        const inspectionsProgress = targetInspections > 0
+            ? Math.min(((kpi.inspectionsCount || 0) / targetInspections) * 100, 100) : 0;
+        const closedCount = kpi.closedActionsCount || 0;
+        const actionsProgress = Math.min(100, (closedCount / 10) * 100);
+        const observationsProgress = targetObservations > 0
+            ? Math.min(((kpi.observationsCount || 0) / targetObservations) * 100, 100) : 0;
+        const trainingsProgress = targetTrainings > 0
+            ? Math.min(((kpi.trainingsCount || 0) / targetTrainings) * 100, 100) : 0;
+        const commitmentProgress = typeof kpi.commitmentRate === 'number' ? kpi.commitmentRate :
+            (typeof kpi.commitmentRate === 'object' && kpi.commitmentRate !== null ? 0 :
             (parseFloat(kpi.commitmentRate) || 0));
-        
+
         container.innerHTML = `
-            <div class="mb-4 flex justify-end">
+            <style>
+                #kpis-container .shm-kpi-card { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; border-radius: 12px; border: 1px solid #e5e7eb; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: box-shadow 0.2s, border-color 0.2s; min-height: auto; }
+                #kpis-container .shm-kpi-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: #d1d5db; }
+                #kpis-container .shm-kpi-card .shm-kpi-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; }
+                #kpis-container .shm-kpi-card .shm-kpi-body { flex: 1; min-width: 0; }
+                #kpis-container .shm-kpi-card .shm-kpi-label { font-size: 0.8rem; font-weight: 600; color: #4b5563; margin-bottom: 0.15rem; }
+                #kpis-container .shm-kpi-card .shm-kpi-value { font-size: 1.35rem; font-weight: 700; color: #111827; line-height: 1.2; }
+                #kpis-container .shm-kpi-card .shm-kpi-target { font-size: 0.7rem; color: #6b7280; margin-top: 0.15rem; }
+                #kpis-container .shm-kpi-card .shm-kpi-bar-wrap { width: 72px; flex-shrink: 0; height: 6px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+                #kpis-container .shm-kpi-card .shm-kpi-bar-fill { height: 100%; border-radius: 999px; transition: width 0.3s; }
+                #kpis-container .shm-kpi-chart-row { padding: 0.75rem 0; border-bottom: 1px solid #f3f4f6; }
+                #kpis-container .shm-kpi-chart-row:last-child { border-bottom: none; }
+            </style>
+            <div class="mb-4 flex flex-wrap justify-end gap-2">
                 <button onclick="SafetyHealthManagement.editKPIs('${kpi.id || ''}', '${kpi.memberId || ''}')" class="btn-primary btn-sm">
                     <i class="fas fa-edit ml-2"></i>
                     تعديل المؤشرات يدوياً
                 </button>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                <div class="kpi-card success">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="font-semibold">الجولات التفتيشية</h3>
-                        <i class="fas fa-clipboard-check text-2xl"></i>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-6">
+                <div class="shm-kpi-card">
+                    <div class="shm-kpi-icon bg-blue-100 text-blue-600"><i class="fas fa-clipboard-check"></i></div>
+                    <div class="shm-kpi-body">
+                        <div class="shm-kpi-label">الجولات التفتيشية</div>
+                        <div class="shm-kpi-value">${kpi.inspectionsCount || 0}</div>
+                        <div class="shm-kpi-target">الهدف: ${targetInspections}</div>
                     </div>
-                    <p class="text-3xl font-bold mb-1">${kpi.inspectionsCount || 0}</p>
-                    <p class="text-sm opacity-90 mb-2">الهدف: ${kpi.targetInspections || 20}</p>
-                    <div class="w-full bg-white bg-opacity-30 rounded-full h-2">
-                        <div class="bg-white rounded-full h-2" style="width: ${inspectionsProgress}%"></div>
-                    </div>
+                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-blue-500" style="width: ${inspectionsProgress}%"></div></div>
                 </div>
-                <div class="kpi-card warning">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="font-semibold">الإجراءات المغلقة</h3>
-                        <i class="fas fa-check-circle text-2xl"></i>
+                <div class="shm-kpi-card">
+                    <div class="shm-kpi-icon bg-emerald-100 text-emerald-600"><i class="fas fa-check-double"></i></div>
+                    <div class="shm-kpi-body">
+                        <div class="shm-kpi-label">الإجراءات المغلقة</div>
+                        <div class="shm-kpi-value">${closedCount}</div>
+                        <div class="shm-kpi-target">هدف النسبة: ${targetActionsClosure}%</div>
                     </div>
-                    <p class="text-3xl font-bold mb-1">${kpi.closedActionsCount || 0}</p>
-                    <p class="text-sm opacity-90 mb-2">نسبة الإغلاق المستهدفة: ${kpi.targetActionsClosure || 80}%</p>
-                    <div class="w-full bg-white bg-opacity-30 rounded-full h-2">
-                        <div class="bg-white rounded-full h-2" style="width: ${Math.min(actionsProgress, 100)}%"></div>
-                    </div>
+                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-emerald-500" style="width: ${actionsProgress}%"></div></div>
                 </div>
-                <div class="kpi-card info">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="font-semibold">الملاحظات</h3>
-                        <i class="fas fa-eye text-2xl"></i>
+                <div class="shm-kpi-card">
+                    <div class="shm-kpi-icon bg-purple-100 text-purple-600"><i class="fas fa-sticky-note"></i></div>
+                    <div class="shm-kpi-body">
+                        <div class="shm-kpi-label">الملاحظات</div>
+                        <div class="shm-kpi-value">${kpi.observationsCount || 0}</div>
+                        <div class="shm-kpi-target">الهدف: ${targetObservations}</div>
                     </div>
-                    <p class="text-3xl font-bold mb-1">${kpi.observationsCount || 0}</p>
-                    <p class="text-sm opacity-90 mb-2">الهدف: ${kpi.targetObservations || 15}</p>
-                    <div class="w-full bg-white bg-opacity-30 rounded-full h-2">
-                        <div class="bg-white rounded-full h-2" style="width: ${observationsProgress}%"></div>
-                    </div>
+                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-purple-500" style="width: ${observationsProgress}%"></div></div>
                 </div>
-                <div class="kpi-card">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="font-semibold">التدريبات</h3>
-                        <i class="fas fa-graduation-cap text-2xl"></i>
+                <div class="shm-kpi-card">
+                    <div class="shm-kpi-icon bg-amber-100 text-amber-600"><i class="fas fa-chalkboard-teacher"></i></div>
+                    <div class="shm-kpi-body">
+                        <div class="shm-kpi-label">التدريبات</div>
+                        <div class="shm-kpi-value">${kpi.trainingsCount || 0}</div>
+                        <div class="shm-kpi-target">الهدف: ${targetTrainings}</div>
                     </div>
-                    <p class="text-3xl font-bold mb-1">${kpi.trainingsCount || 0}</p>
-                    <p class="text-sm opacity-90 mb-2">الهدف: ${kpi.targetTrainings || 2}</p>
-                    <div class="w-full bg-white bg-opacity-30 rounded-full h-2">
-                        <div class="bg-white rounded-full h-2" style="width: ${trainingsProgress}%"></div>
-                    </div>
+                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-amber-500" style="width: ${trainingsProgress}%"></div></div>
                 </div>
-                <div class="kpi-card ${commitmentProgress >= 95 ? 'success' : 'warning'}">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="font-semibold">نسبة الالتزام</h3>
-                        <i class="fas fa-percentage text-2xl"></i>
+                <div class="shm-kpi-card">
+                    <div class="shm-kpi-icon ${commitmentProgress >= (targetCommitment || 95) ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}"><i class="fas fa-percentage"></i></div>
+                    <div class="shm-kpi-body">
+                        <div class="shm-kpi-label">نسبة الالتزام</div>
+                        <div class="shm-kpi-value">${commitmentProgress.toFixed(1)}%</div>
+                        <div class="shm-kpi-target">الهدف: ${targetCommitment}%</div>
                     </div>
-                    <p class="text-3xl font-bold mb-1">${commitmentProgress.toFixed(1)}%</p>
-                    <p class="text-sm opacity-90 mb-2">الهدف: ${kpi.targetCommitment || 95}%</p>
-                    <div class="w-full bg-white bg-opacity-30 rounded-full h-2">
-                        <div class="bg-white rounded-full h-2" style="width: ${commitmentProgress}%"></div>
-                    </div>
+                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill ${commitmentProgress >= (targetCommitment || 95) ? 'bg-emerald-500' : 'bg-amber-500'}" style="width: ${Math.min(commitmentProgress, 100)}%"></div></div>
                 </div>
                 ${kpi.incidentsHandledCount !== undefined ? `
-                <div class="kpi-card danger">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="font-semibold">الحوادث المعالجة</h3>
-                        <i class="fas fa-exclamation-triangle text-2xl"></i>
+                <div class="shm-kpi-card">
+                    <div class="shm-kpi-icon bg-red-100 text-red-600"><i class="fas fa-exclamation-triangle"></i></div>
+                    <div class="shm-kpi-body">
+                        <div class="shm-kpi-label">الحوادث المعالجة</div>
+                        <div class="shm-kpi-value">${kpi.incidentsHandledCount || 0}</div>
+                        <div class="shm-kpi-target">—</div>
                     </div>
-                    <p class="text-3xl font-bold">${kpi.incidentsHandledCount || 0}</p>
+                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-gray-200" style="width: 0%"></div></div>
                 </div>
                 ` : ''}
                 ${kpi.nearMissCount !== undefined ? `
-                <div class="kpi-card warning">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="font-semibold">Near Miss</h3>
-                        <i class="fas fa-exclamation-circle text-2xl"></i>
+                <div class="shm-kpi-card">
+                    <div class="shm-kpi-icon bg-amber-100 text-amber-600"><i class="fas fa-exclamation-circle"></i></div>
+                    <div class="shm-kpi-body">
+                        <div class="shm-kpi-label">Near Miss</div>
+                        <div class="shm-kpi-value">${kpi.nearMissCount || 0}</div>
+                        <div class="shm-kpi-target">—</div>
                     </div>
-                    <p class="text-3xl font-bold">${kpi.nearMissCount || 0}</p>
+                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-gray-200" style="width: 0%"></div></div>
                 </div>
                 ` : ''}
                 ${kpi.ptwCount !== undefined ? `
-                <div class="kpi-card info">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="font-semibold">PTW المعالجة</h3>
-                        <i class="fas fa-file-alt text-2xl"></i>
+                <div class="shm-kpi-card">
+                    <div class="shm-kpi-icon bg-indigo-100 text-indigo-600"><i class="fas fa-file-signature"></i></div>
+                    <div class="shm-kpi-body">
+                        <div class="shm-kpi-label">PTW المعالجة</div>
+                        <div class="shm-kpi-value">${kpi.ptwCount || 0}</div>
+                        <div class="shm-kpi-target">—</div>
                     </div>
-                    <p class="text-3xl font-bold">${kpi.ptwCount || 0}</p>
+                    <div class="shm-kpi-bar-wrap"><div class="shm-kpi-bar-fill bg-gray-200" style="width: 0%"></div></div>
                 </div>
                 ` : ''}
             </div>
-            <!-- Chart Visualization -->
-            <div class="bg-white border border-gray-200 rounded-lg p-6 mt-6">
-                <h3 class="font-semibold text-gray-700 mb-4">مقارنة الأداء مع الأهداف</h3>
-                <div class="space-y-4">
-                    ${this.renderKPIChartBar('الجولات التفتيشية', kpi.inspectionsCount || 0, kpi.targetInspections || 20)}
-                    ${this.renderKPIChartBar('الإجراءات المغلقة', kpi.closedActionsCount || 0, Math.max(kpi.closedActionsCount || 0, 10))}
-                    ${this.renderKPIChartBar('الملاحظات', kpi.observationsCount || 0, kpi.targetObservations || 15)}
-                    ${this.renderKPIChartBar('التدريبات', kpi.trainingsCount || 0, kpi.targetTrainings || 2)}
+            <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                <h3 class="font-semibold text-gray-800 mb-3 text-base">مقارنة الأداء مع الأهداف</h3>
+                <div class="space-y-0 divide-y divide-gray-100">
+                    ${this.renderKPIChartBar('الجولات التفتيشية', kpi.inspectionsCount || 0, targetInspections)}
+                    ${this.renderKPIChartBar('الإجراءات المغلقة', closedCount, Math.max(closedCount, 10))}
+                    ${this.renderKPIChartBar('الملاحظات', kpi.observationsCount || 0, targetObservations)}
+                    ${this.renderKPIChartBar('التدريبات', kpi.trainingsCount || 0, targetTrainings)}
                 </div>
             </div>
-            ${kpi.isManual ? '<div class="mt-2 text-sm text-yellow-600"><i class="fas fa-info-circle ml-1"></i>تم تعديل هذه المؤشرات يدوياً</div>' : ''}
+            ${kpi.isManual ? '<div class="mt-4 text-sm text-amber-600 flex items-center gap-1"><i class="fas fa-info-circle"></i><span>تم تعديل هذه المؤشرات يدوياً</span></div>' : ''}
         `;
     },
 
@@ -3061,16 +3197,14 @@ const SafetyHealthManagement = {
     // ===== Helper Methods =====
     renderKPIChartBar(label, current, target) {
         const percentage = target > 0 ? Math.min((current / target) * 100, 100) : 0;
-        const color = percentage >= 80 ? 'bg-green-500' : percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500';
+        const color = percentage >= 80 ? 'bg-emerald-500' : percentage >= 50 ? 'bg-amber-500' : 'bg-red-500';
         return `
-            <div>
-                <div class="flex justify-between text-sm mb-1">
-                    <span class="font-medium text-gray-700">${label}</span>
-                    <span class="text-gray-600">${current} / ${target}</span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-4">
-                    <div class="${color} h-4 rounded-full flex items-center justify-end pr-2" style="width: ${percentage}%">
-                        <span class="text-xs text-white font-semibold">${percentage.toFixed(0)}%</span>
+            <div class="shm-kpi-chart-row flex flex-wrap items-center gap-3 py-3">
+                <span class="font-semibold text-gray-800 w-40 flex-shrink-0">${Utils.escapeHTML(label)}</span>
+                <span class="text-gray-500 text-sm flex-shrink-0">${current} / ${target}</span>
+                <div class="flex-1 min-w-0 bg-gray-200 rounded-full h-4 overflow-hidden">
+                    <div class="${color} h-4 rounded-full flex items-center justify-end pr-2 transition-all duration-300" style="min-width: ${percentage > 0 ? '1.5rem' : '0'}; width: ${percentage}%">
+                        ${percentage > 0 ? `<span class="text-xs text-white font-bold">${percentage.toFixed(0)}%</span>` : ''}
                     </div>
                 </div>
             </div>
@@ -3410,32 +3544,48 @@ const SafetyHealthManagement = {
         const memberSelect = document.getElementById('report-member-select');
         if (!memberSelect) return;
 
-        // التحقق من إمكانية الوصول للبيانات
         const accessMessage = this.getDataAccessMessage('generateSafetyTeamPerformanceReport', {});
         if (accessMessage) {
             memberSelect.innerHTML = `<option value="">${accessMessage}</option>`;
             const container = document.getElementById('reports-container');
-            if (container) {
-                container.innerHTML = `<div class="empty-state"><p class="text-gray-500">${accessMessage}</p></div>`;
-            }
+            if (container) container.innerHTML = `<div class="empty-state"><p class="text-gray-500">${accessMessage}</p></div>`;
             return;
         }
 
+        let members = this._getMembersFromCache();
+        if (members && members.length > 0) {
+            memberSelect.innerHTML = '<option value="">اختر عضو الفريق</option>' +
+                members.map(m => `<option value="${m.id}">${Utils.escapeHTML(m.name || '')}</option>`).join('');
+            document.getElementById('generate-report-btn')?.addEventListener('click', () => this.generateReport());
+        }
+
         try {
-            // Load team members for dropdown
-            const membersResponse = await GoogleIntegration.sendRequest({
-                action: 'getSafetyTeamMembers',
-                data: {}
-            });
+            const fetchPromise = GoogleIntegration.sendRequest({ action: 'getSafetyTeamMembers', data: {} });
+            let membersResponse;
+            try {
+                membersResponse = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    fetchPromise.then((r) => {
+                        if (r && r.success && r.data) {
+                            const m = Array.isArray(r.data) ? r.data : [];
+                            this.cache.members = m;
+                            this.cache.lastLoad = Date.now();
+                            const sel = document.getElementById('report-member-select');
+                            if (sel) sel.innerHTML = '<option value="">اختر عضو الفريق</option>' + m.map(x => `<option value="${x.id}">${Utils.escapeHTML(x.name || '')}</option>`).join('');
+                            document.getElementById('generate-report-btn')?.addEventListener('click', () => this.generateReport());
+                        }
+                    }).catch(() => {});
+                }
+                return;
+            }
 
-            if (membersResponse.success && membersResponse.data) {
-                const members = Array.isArray(membersResponse.data) ? membersResponse.data : [];
+            if (membersResponse && membersResponse.success && membersResponse.data) {
+                members = Array.isArray(membersResponse.data) ? membersResponse.data : [];
+                this.cache.members = members;
+                this.cache.lastLoad = Date.now();
                 memberSelect.innerHTML = '<option value="">اختر عضو الفريق</option>' +
-                    members.map(m => `
-                        <option value="${m.id}">${Utils.escapeHTML(m.name || '')}</option>
-                    `).join('');
-
-                // Setup event listener
+                    members.map(m => `<option value="${m.id}">${Utils.escapeHTML(m.name || '')}</option>`).join('');
                 document.getElementById('generate-report-btn')?.addEventListener('click', () => this.generateReport());
             }
         } catch (error) {
@@ -3509,9 +3659,12 @@ const SafetyHealthManagement = {
 
         try {
             Loading.show();
+            var now = new Date();
+            var startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            var endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
             const response = await GoogleIntegration.sendRequest({
                 action: 'generateSafetyTeamPerformanceReport',
-                data: { memberId: memberId }
+                data: { memberId: memberId, startDate: startDate.toISOString ? startDate.toISOString().slice(0, 10) : startDate, endDate: endDate.toISOString ? endDate.toISOString().slice(0, 10) : endDate }
             });
 
             if (response.success && response.data) {
@@ -3586,24 +3739,6 @@ const SafetyHealthManagement = {
         } finally {
             Loading.hide();
         }
-    },
-
-    renderKPIChartBar(label, current, target) {
-        const percentage = target > 0 ? Math.min((current / target) * 100, 100) : 0;
-        const color = percentage >= 80 ? 'bg-green-500' : percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500';
-        return `
-            <div>
-                <div class="flex justify-between text-sm mb-1">
-                    <span class="font-medium text-gray-700">${label}</span>
-                    <span class="text-gray-600">${current} / ${target}</span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-4">
-                    <div class="${color} h-4 rounded-full flex items-center justify-end pr-2" style="width: ${percentage}%">
-                        <span class="text-xs text-white font-semibold">${percentage.toFixed(0)}%</span>
-                    </div>
-                </div>
-            </div>
-        `;
     },
 
     async exportReport(memberId) {
@@ -3699,7 +3834,7 @@ const SafetyHealthManagement = {
                                 </tr>
                                 <tr>
                                     <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><strong>التدريبات:</strong></td>
-                                    <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left;">${kpis.trainingsCount || 0} / ${kpis.targetTrainings || 2}</td>
+                                    <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left;">${kpis.trainingsCount || 0} / ${kpis.targetTrainings || 3}</td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 8px;"><strong>نسبة الالتزام:</strong></td>
@@ -3822,7 +3957,7 @@ const SafetyHealthManagement = {
                     ['الجولات التفتيشية', kpis.inspectionsCount || 0, '/', kpis.targetInspections || 20],
                     ['الإجراءات المغلقة', kpis.closedActionsCount || 0],
                     ['الملاحظات', kpis.observationsCount || 0, '/', kpis.targetObservations || 15],
-                    ['التدريبات', kpis.trainingsCount || 0, '/', kpis.targetTrainings || 2],
+                    ['التدريبات', kpis.trainingsCount || 0, '/', kpis.targetTrainings || 3],
                     ['نسبة الالتزام', (kpis.commitmentRate || 0).toFixed(1) + '%', '/', (kpis.targetCommitment || 95) + '%']
                 ];
 
@@ -4078,45 +4213,72 @@ const SafetyHealthManagement = {
         `;
     },
 
+    _attachAttendanceListeners() {
+        const memberSelect = document.getElementById('attendance-member-select');
+        if (!memberSelect) return;
+        memberSelect.onchange = () => {
+            const memberId = memberSelect.value;
+            if (memberId) {
+                this.loadMemberAttendance(memberId);
+                this.loadMemberLeaves(memberId);
+            } else {
+                const al = document.getElementById('attendance-list');
+                const ll = document.getElementById('leaves-list');
+                if (al) al.innerHTML = '<div class="empty-state"><p class="text-gray-500">اختر عضو الفريق لعرض سجل الحضور</p></div>';
+                if (ll) ll.innerHTML = '<div class="empty-state"><p class="text-gray-500">اختر عضو الفريق لعرض سجل الإجازات</p></div>';
+            }
+        };
+        document.getElementById('add-attendance-btn')?.addEventListener('click', () => this.showAttendanceForm());
+        document.getElementById('add-leave-btn')?.addEventListener('click', () => this.showLeaveForm());
+        let reportBtn = memberSelect.parentElement?.querySelector('.btn-success');
+        if (!reportBtn) {
+            reportBtn = document.createElement('button');
+            reportBtn.className = 'btn-success btn-sm ml-2';
+            reportBtn.innerHTML = '<i class="fas fa-file-alt ml-2"></i>تقرير حضور/غياب';
+            reportBtn.addEventListener('click', () => this.generateAttendanceReport());
+            memberSelect.parentElement?.appendChild(reportBtn);
+        }
+    },
+
     async loadAttendance() {
         const memberSelect = document.getElementById('attendance-member-select');
         if (!memberSelect) return;
 
+        const members = this._getMembersFromCache();
+        if (members && members.length > 0) {
+            memberSelect.innerHTML = '<option value="">اختر عضو الفريق</option>' +
+                members.map(m => `<option value="${m.id}">${Utils.escapeHTML(m.name || '')}</option>`).join('');
+            this._attachAttendanceListeners();
+        }
+
         try {
-            // Load team members for dropdown
-            const membersResponse = await GoogleIntegration.sendRequest({
-                action: 'getSafetyTeamMembers',
-                data: {}
-            });
+            const fetchPromise = GoogleIntegration.sendRequest({ action: 'getSafetyTeamMembers', data: {} });
+            let membersResponse;
+            try {
+                membersResponse = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    fetchPromise.then((r) => {
+                        if (r && r.success && r.data) {
+                            const m = Array.isArray(r.data) ? r.data : [];
+                            this.cache.members = m;
+                            this.cache.lastLoad = Date.now();
+                            const sel = document.getElementById('attendance-member-select');
+                            if (sel) sel.innerHTML = '<option value="">اختر عضو الفريق</option>' + m.map(x => `<option value="${x.id}">${Utils.escapeHTML(x.name || '')}</option>`).join('');
+                            this._attachAttendanceListeners();
+                        }
+                    }).catch(() => {});
+                }
+                return;
+            }
 
-            if (membersResponse.success && membersResponse.data) {
-                const members = Array.isArray(membersResponse.data) ? membersResponse.data : [];
+            if (membersResponse && membersResponse.success && membersResponse.data) {
+                const m = Array.isArray(membersResponse.data) ? membersResponse.data : [];
+                this.cache.members = m;
+                this.cache.lastLoad = Date.now();
                 memberSelect.innerHTML = '<option value="">اختر عضو الفريق</option>' +
-                    members.map(m => `
-                        <option value="${m.id}">${Utils.escapeHTML(m.name || '')}</option>
-                    `).join('');
-
-                // Setup event listeners
-                memberSelect.addEventListener('change', () => {
-                    const memberId = memberSelect.value;
-                    if (memberId) {
-                        this.loadMemberAttendance(memberId);
-                        this.loadMemberLeaves(memberId);
-                    } else {
-                        document.getElementById('attendance-list').innerHTML = '<div class="empty-state"><p class="text-gray-500">اختر عضو الفريق لعرض سجل الحضور</p></div>';
-                        document.getElementById('leaves-list').innerHTML = '<div class="empty-state"><p class="text-gray-500">اختر عضو الفريق لعرض سجل الإجازات</p></div>';
-                    }
-                });
-
-                document.getElementById('add-attendance-btn')?.addEventListener('click', () => this.showAttendanceForm());
-                document.getElementById('add-leave-btn')?.addEventListener('click', () => this.showLeaveForm());
-
-                // Add report generation button
-                const reportBtn = document.createElement('button');
-                reportBtn.className = 'btn-success btn-sm ml-2';
-                reportBtn.innerHTML = '<i class="fas fa-file-alt ml-2"></i>تقرير حضور/غياب';
-                reportBtn.addEventListener('click', () => this.generateAttendanceReport());
-                memberSelect.parentElement.appendChild(reportBtn);
+                    m.map(x => `<option value="${x.id}">${Utils.escapeHTML(x.name || '')}</option>`).join('');
+                this._attachAttendanceListeners();
             }
         } catch (error) {
             const errorMessage = error?.message || error?.toString() || 'خطأ غير معروف';
@@ -4490,16 +4652,32 @@ const SafetyHealthManagement = {
         }
 
         try {
-            Loading.show();
-            const response = await GoogleIntegration.sendRequest({
+            container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
+            const fetchPromise = GoogleIntegration.sendRequest({
                 action: 'getSafetyHealthManagementSettings',
                 data: {}
             });
+            let response;
+            try {
+                response = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    fetchPromise.then((r) => {
+                        const c = document.getElementById('settings-container');
+                        if (!c) return;
+                        if (r && r.success && r.data) this.renderSettingsContent(c, r.data);
+                        else {
+                            const defaultSettings = { leaveTypes: ['سنوية', 'مرضية', 'طارئة', 'أخرى'], attendanceStatuses: ['حاضر', 'متأخر', 'غائب', 'عمل ميداني'], kpiTargets: { targetInspections: 20, targetActionsClosure: 80, targetObservations: 15, targetTrainings: 3, targetCommitment: 95 } };
+                            this.renderSettingsContent(c, defaultSettings);
+                        }
+                    }).catch(() => {});
+                } else throw timeoutErr;
+            }
 
-            if (response.success && response.data) {
+            if (response && response.success && response.data) {
                 const settings = response.data;
                 this.renderSettingsContent(container, settings);
-            } else {
+            } else if (response) {
                 // عرض الإعدادات الافتراضية في حالة فشل التحميل
                 const defaultSettings = {
                     leaveTypes: ['سنوية', 'مرضية', 'طارئة', 'أخرى'],
@@ -4546,8 +4724,6 @@ const SafetyHealthManagement = {
                 }
             };
             this.renderSettingsContent(container, defaultSettings);
-        } finally {
-            Loading.hide();
         }
     },
 
@@ -6236,39 +6412,58 @@ const SafetyHealthManagement = {
             return;
         }
 
-        try {
-            // تحميل أعضاء الفريق
-            const membersResponse = await GoogleIntegration.sendRequest({
-                action: 'getSafetyTeamMembers',
-                data: {}
-            });
-
-            if (membersResponse.success && membersResponse.data) {
-                const members = Array.isArray(membersResponse.data) ? membersResponse.data : [];
-                memberSelect.innerHTML = '<option value="">اختر عضو الفريق</option>' +
-                    members.map(m => `
-                        <option value="${m.id}">
-                            ${Utils.escapeHTML(m.name || '')}
-                        </option>
-                    `).join('');
-
-                // إعداد مستمع الأحداث
-                if (analyzeBtn) {
-                    analyzeBtn.addEventListener('click', () => {
-                        const memberId = memberSelect.value;
-                        if (!memberId) {
-                            Notification.error('يرجى اختيار عضو الفريق');
-                            return;
-                        }
-                        this.performComprehensiveAnalysis(memberId);
-                    });
-                }
-            }
-        } catch (error) {
-            const errorMessage = error?.message || error?.toString() || 'خطأ غير معروف';
-            Utils.safeError('خطأ في تحميل التحليل:', errorMessage, error);
-            container.innerHTML = `<div class="empty-state"><p class="text-red-500">${Utils.escapeHTML(errorMessage)}</p></div>`;
+        let members = this._getMembersFromCache();
+        if (members && members.length > 0) {
+            memberSelect.innerHTML = '<option value="">اختر عضو الفريق</option>' +
+                members.map(m => `<option value="${m.id}">${Utils.escapeHTML(m.name || '')}</option>`).join('');
         }
+
+        try {
+            const fetchPromise = GoogleIntegration.sendRequest({ action: 'getSafetyTeamMembers', data: {} });
+            let membersResponse;
+            try {
+                membersResponse = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    fetchPromise.then((r) => {
+                        if (r && r.success && r.data) {
+                            const m = Array.isArray(r.data) ? r.data : [];
+                            this.cache.members = m;
+                            this.cache.lastLoad = Date.now();
+                            const sel = document.getElementById('analysis-member-select');
+                            if (sel) sel.innerHTML = '<option value="">اختر عضو الفريق</option>' + m.map(x => `<option value="${x.id}">${Utils.escapeHTML(x.name || '')}</option>`).join('');
+                        }
+                    }).catch(() => {});
+                }
+                this._attachAnalysisButton(container, memberSelect, analyzeBtn);
+                return;
+            }
+
+            if (membersResponse && membersResponse.success && membersResponse.data) {
+                members = Array.isArray(membersResponse.data) ? membersResponse.data : [];
+                this.cache.members = members;
+                this.cache.lastLoad = Date.now();
+                memberSelect.innerHTML = '<option value="">اختر عضو الفريق</option>' +
+                    members.map(m => `<option value="${m.id}">${Utils.escapeHTML(m.name || '')}</option>`).join('');
+            }
+            this._attachAnalysisButton(container, memberSelect, analyzeBtn);
+        } catch (error) {
+            Utils.safeError('خطأ في تحميل التحليل:', error?.message, error);
+            this._attachAnalysisButton(container, memberSelect, analyzeBtn);
+        }
+    },
+
+    _attachAnalysisButton(container, memberSelect, analyzeBtn) {
+        if (!analyzeBtn) return;
+        const self = this;
+        analyzeBtn.onclick = function () {
+            const memberId = memberSelect ? memberSelect.value : '';
+            if (!memberId) {
+                Notification.error('يرجى اختيار عضو الفريق');
+                return;
+            }
+            self.performComprehensiveAnalysis(memberId);
+        };
     },
 
     async performComprehensiveAnalysis(memberId) {
@@ -6279,35 +6474,43 @@ const SafetyHealthManagement = {
             return;
         }
 
-        try {
-            Loading.show();
-            container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري تحليل البيانات...</p></div>';
+        // عرض هيكل تحميل فوراً (بدون شاشة تحميل عامة) لتجربة أسرع
+        container.innerHTML = `
+            <div class="shm-analysis-skeleton space-y-4 p-4">
+                <div class="h-20 bg-gray-100 rounded-xl animate-pulse"></div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    ${Array(6).fill(0).map(() => '<div class="h-24 bg-gray-100 rounded-xl animate-pulse"></div>').join('')}
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="h-32 bg-gray-100 rounded-xl animate-pulse"></div>
+                    <div class="h-32 bg-gray-100 rounded-xl animate-pulse"></div>
+                </div>
+                <p class="text-center text-gray-500 text-sm">جاري تحميل بيانات العضو من النظام...</p>
+            </div>`;
 
-            // جلب بيانات العضو
-            const memberResponse = await GoogleIntegration.sendRequest({
-                action: 'getSafetyTeamMember',
-                data: { memberId: memberId }
-            });
+        try {
+            const mid = String(memberId);
+            const [memberResponse, incidentsResponse, nearMissResponse, ptwResponse, trainingResponse,
+                   inspectionsResponse, attendanceResponse, leavesResponse, kpisResponse, observationsResponse] = await Promise.all([
+                GoogleIntegration.sendRequest({ action: 'getSafetyTeamMember', data: { memberId: memberId } }),
+                GoogleIntegration.sendRequest({ action: 'getAllIncidents', data: { filters: {} } }).then(v => ({ status: 'fulfilled', value: v })).catch(e => ({ status: 'rejected', reason: e })),
+                GoogleIntegration.sendRequest({ action: 'getAllNearMisses', data: { filters: {} } }).then(v => ({ status: 'fulfilled', value: v })).catch(e => ({ status: 'rejected', reason: e })),
+                GoogleIntegration.sendRequest({ action: 'getAllPTWs', data: { filters: {} } }).then(v => ({ status: 'fulfilled', value: v })).catch(e => ({ status: 'rejected', reason: e })),
+                GoogleIntegration.sendRequest({ action: 'getAllTrainings', data: { filters: {} } }).then(v => ({ status: 'fulfilled', value: v })).catch(e => ({ status: 'rejected', reason: e })),
+                GoogleIntegration.sendRequest({ action: 'getAllPeriodicInspectionRecords', data: { filters: {} } }).then(v => ({ status: 'fulfilled', value: v })).catch(e => ({ status: 'rejected', reason: e })),
+                GoogleIntegration.sendRequest({ action: 'getSafetyTeamAttendance', data: { memberId: memberId } }).then(v => ({ status: 'fulfilled', value: v })).catch(e => ({ status: 'rejected', reason: e })),
+                GoogleIntegration.sendRequest({ action: 'getSafetyTeamLeaves', data: { memberId: memberId } }).then(v => ({ status: 'fulfilled', value: v })).catch(e => ({ status: 'rejected', reason: e })),
+                GoogleIntegration.sendRequest({ action: 'getSafetyTeamKPIs', data: { memberId: memberId } }).then(v => ({ status: 'fulfilled', value: v })).catch(e => ({ status: 'rejected', reason: e })),
+                GoogleIntegration.sendRequest({ action: 'getAllObservations', data: { filters: {} } }).then(v => ({ status: 'fulfilled', value: v })).catch(e => ({ status: 'rejected', reason: e }))
+            ]);
 
             if (!memberResponse.success || !memberResponse.data) {
                 Notification.error('لم يتم العثور على عضو الفريق');
+                container.innerHTML = '<div class="empty-state"><p class="text-red-500">لم يتم العثور على عضو الفريق</p></div>';
                 return;
             }
 
             const member = memberResponse.data;
-
-            // جلب جميع البيانات المتعلقة بالعضو من جميع المديولات
-            const [incidentsResponse, nearMissResponse, ptwResponse, trainingResponse, 
-                   inspectionsResponse, attendanceResponse, leavesResponse, kpisResponse] = await Promise.allSettled([
-                GoogleIntegration.sendRequest({ action: 'getAllIncidents', data: { filters: {} } }),
-                GoogleIntegration.sendRequest({ action: 'getAllNearMisses', data: { filters: {} } }),
-                GoogleIntegration.sendRequest({ action: 'getAllPTWs', data: { filters: {} } }),
-                GoogleIntegration.sendRequest({ action: 'getAllTrainings', data: { filters: {} } }),
-                GoogleIntegration.sendRequest({ action: 'getAllPeriodicInspectionRecords', data: { filters: {} } }),
-                GoogleIntegration.sendRequest({ action: 'getSafetyTeamAttendance', data: { memberId: memberId } }),
-                GoogleIntegration.sendRequest({ action: 'getSafetyTeamLeaves', data: { memberId: memberId } }),
-                GoogleIntegration.sendRequest({ action: 'getSafetyTeamKPIs', data: { memberId: memberId } })
-            ]);
 
             // محاولة جلب المخالفات من AppState أو استخدام array فارغ
             let violationsData = [];
@@ -6319,56 +6522,79 @@ const SafetyHealthManagement = {
                 Utils.safeError('خطأ في جلب المخالفات:', e);
             }
 
-            // معالجة البيانات
-            const incidents = incidentsResponse.status === 'fulfilled' && incidentsResponse.value.success 
-                ? (incidentsResponse.value.data || []).filter(i => 
-                    i.reportedBy === memberId || i.investigatedBy === memberId || i.responsible === memberId || 
-                    i.assignedTo === memberId || (i.assignees && Array.isArray(i.assignees) && i.assignees.includes(memberId))
-                ) : [];
-            
-            const nearMisses = nearMissResponse.status === 'fulfilled' && nearMissResponse.value.success
-                ? (nearMissResponse.value.data || []).filter(nm => 
-                    nm.reportedBy === memberId || nm.investigatedBy === memberId || nm.responsible === memberId ||
-                    nm.assignedTo === memberId
-                ) : [];
-            
-            const ptws = ptwResponse.status === 'fulfilled' && ptwResponse.value.success
-                ? (ptwResponse.value.data || []).filter(p => 
-                    p.requestedBy === memberId || p.approvedBy === memberId || p.supervisedBy === memberId ||
-                    p.assignedTo === memberId || (p.permitHolders && Array.isArray(p.permitHolders) && p.permitHolders.includes(memberId))
-                ) : [];
-            
-            const violations = Array.isArray(violationsData) ? violationsData.filter(v => 
-                v.reportedBy === memberId || v.investigatedBy === memberId || v.assignedTo === memberId ||
-                (v.reporterId && v.reporterId === memberId) || (v.inspectorId && v.inspectorId === memberId)
-            ) : [];
-            
-            const trainings = trainingResponse.status === 'fulfilled' && trainingResponse.value.success
-                ? (trainingResponse.value.data || []).filter(t => {
-                    if (t.participants && Array.isArray(t.participants)) {
-                        return t.participants.some(p => p.id === memberId || p === memberId);
-                    }
-                    if (t.instructor && (t.instructor.id === memberId || t.instructor === memberId)) {
-                        return true;
-                    }
-                    return t.conductedBy === memberId || t.organizedBy === memberId;
-                }) : [];
-            
-            const inspections = inspectionsResponse.status === 'fulfilled' && inspectionsResponse.value.success
-                ? (inspectionsResponse.value.data || []).filter(ins => 
-                    ins.inspector === memberId || ins.responsible === memberId || ins.assignedTo === memberId
-                ) : [];
-            
-            const attendance = attendanceResponse.status === 'fulfilled' && attendanceResponse.value.success
-                ? (attendanceResponse.value.data || []) : [];
-            
-            const leaves = leavesResponse.status === 'fulfilled' && leavesResponse.value.success
-                ? (leavesResponse.value.data || []) : [];
-            
-            const kpis = kpisResponse.status === 'fulfilled' && kpisResponse.value.success
-                ? (kpisResponse.value.data || []) : [];
+            // دالة مساعدة للمقارنة الآمنة مع memberId
+            const eq = (val) => val != null && String(val) === mid;
 
-            // حساب الإحصائيات
+            // معالجة البيانات بفلاتر متطابقة مع الـ Backend (حقول reportedBy, inspector, participants, إلخ)
+            const incidents = incidentsResponse.status === 'fulfilled' && incidentsResponse.value && incidentsResponse.value.success
+                ? (incidentsResponse.value.data || []).filter(i =>
+                    eq(i.reportedBy) || eq(i.investigatedBy) || eq(i.responsible) || eq(i.assignedTo) ||
+                    (i.assignees && Array.isArray(i.assignees) && i.assignees.some(a => eq(a)))
+                ) : [];
+
+            const nearMisses = nearMissResponse.status === 'fulfilled' && nearMissResponse.value && nearMissResponse.value.success
+                ? (nearMissResponse.value.data || []).filter(nm =>
+                    eq(nm.reportedBy) || eq(nm.investigatedBy) || eq(nm.responsible) || eq(nm.assignedTo)
+                ) : [];
+
+            const ptws = ptwResponse.status === 'fulfilled' && ptwResponse.value && ptwResponse.value.success
+                ? (ptwResponse.value.data || []).filter(p =>
+                    eq(p.requestedBy) || eq(p.approvedBy) || eq(p.supervisedBy) || eq(p.responsible) ||
+                    eq(p.assignedTo) || (p.permitHolders && Array.isArray(p.permitHolders) && p.permitHolders.some(h => eq(h)))
+                ) : [];
+
+            const violations = Array.isArray(violationsData) ? violationsData.filter(v =>
+                eq(v.reportedBy) || eq(v.investigatedBy) || eq(v.assignedTo) || eq(v.reporterId) || eq(v.inspectorId)
+            ) : [];
+
+            const trainings = trainingResponse.status === 'fulfilled' && trainingResponse.value && trainingResponse.value.success
+                ? (trainingResponse.value.data || []).filter(t => {
+                    if (eq(t.trainer)) return true;
+                    if (t.participants != null) {
+                        if (Array.isArray(t.participants)) {
+                            if (t.participants.some(p => eq(p) || (p && eq(p.id)))) return true;
+                        } else if (typeof t.participants === 'string') {
+                            try {
+                                const parsed = JSON.parse(t.participants);
+                                if (Array.isArray(parsed) && parsed.some(p => eq(p) || (p && eq(p.id)))) return true;
+                            } catch (_) {}
+                            if (t.participants.indexOf(mid) !== -1) return true;
+                        }
+                    }
+                    return eq(t.instructor) || (t.instructor && eq(t.instructor.id)) || eq(t.conductedBy) || eq(t.organizedBy);
+                }) : [];
+
+            const inspections = inspectionsResponse.status === 'fulfilled' && inspectionsResponse.value && inspectionsResponse.value.success
+                ? (inspectionsResponse.value.data || []).filter(ins =>
+                    eq(ins.inspector) || eq(ins.responsible) || eq(ins.assignedTo)
+                ) : [];
+
+            // الملاحظات: تسجيل باسم العضو (supervisor أو observerName مطابق للاسم)
+            const observationsRaw = observationsResponse.status === 'fulfilled' && observationsResponse.value && observationsResponse.value.success
+                ? (observationsResponse.value.data || []) : [];
+            const observations = observationsRaw.filter(o =>
+                eq(o.supervisor) || eq(o.responsible) || eq(o.reportedBy) ||
+                (o.observerName && member.name && String(o.observerName).trim() === String(member.name).trim())
+            );
+
+            const attendance = attendanceResponse.status === 'fulfilled' && attendanceResponse.value && attendanceResponse.value.success
+                ? (attendanceResponse.value.data || []) : [];
+
+            const leaves = leavesResponse.status === 'fulfilled' && leavesResponse.value && leavesResponse.value.success
+                ? (leavesResponse.value.data || []) : [];
+
+            let kpis = kpisResponse.status === 'fulfilled' && kpisResponse.value && kpisResponse.value.success
+                ? (kpisResponse.value.data || []) : [];
+            // ترتيب مؤشرات الأداء حسب الفترة (الأحدث أولاً) لاختيار "آخر فترة" بشكل صحيح
+            if (kpis.length > 1) {
+                kpis = [...kpis].sort((a, b) => {
+                    const periodCompare = (b.period || '').localeCompare(a.period || '');
+                    if (periodCompare !== 0) return periodCompare;
+                    return new Date(b.calculatedAt || 0) - new Date(a.calculatedAt || 0);
+                });
+            }
+
+            // حساب الإحصائيات مع قيم افتراضية آمنة (كل ما تم تسجيله باسم العضو على النظام)
             const stats = {
                 totalIncidents: incidents.length,
                 totalNearMisses: nearMisses.length,
@@ -6376,178 +6602,193 @@ const SafetyHealthManagement = {
                 totalViolations: violations.length,
                 totalTrainings: trainings.length,
                 totalInspections: inspections.length,
+                totalObservations: observations.length,
                 totalAttendanceDays: attendance.length,
-                presentDays: attendance.filter(a => a.status === 'حاضر' || a.status === 'present').length,
-                absentDays: attendance.filter(a => a.status === 'غائب' || a.status === 'absent').length,
+                presentDays: attendance.filter(a => a && (a.status === 'حاضر' || a.status === 'present')).length,
+                absentDays: attendance.filter(a => a && (a.status === 'غائب' || a.status === 'absent')).length,
                 totalLeaves: leaves.length,
-                activeLeaves: leaves.filter(l => l.status === 'موافق' || l.status === 'approved').length,
+                activeLeaves: leaves.filter(l => l && (l.status === 'موافق' || l.status === 'approved')).length,
                 latestKPI: kpis.length > 0 ? kpis[0] : null
             };
 
-            // حساب معدل الحضور
-            const attendanceRate = stats.totalAttendanceDays > 0 
-                ? ((stats.presentDays / stats.totalAttendanceDays) * 100).toFixed(1) 
-                : 0;
+            // حساب معدل الحضور (قيمة رقمية آمنة للعرض)
+            const attendanceRate = stats.totalAttendanceDays > 0
+                ? ((stats.presentDays / stats.totalAttendanceDays) * 100).toFixed(1)
+                : '0';
 
-            // عرض النتائج
+            // قيم آمنة للعرض في الكروت (منع undefined/NaN)
+            const safe = (n, def = 0) => (n != null && Number.isFinite(Number(n)) ? Number(n) : def);
+            const k = stats.latestKPI;
+
+            // عرض النتائج بتصميم احترافي للكروت
             container.innerHTML = `
-                <div class="space-y-6">
-                    <!-- معلومات العضو -->
-                    <div class="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-6">
-                        <div class="flex items-center justify-between mb-4">
+                <div id="shm-analysis-root" class="shm-analysis space-y-6">
+                    <style>
+                        .shm-analysis .shm-analysis-card { border-radius: 16px; box-shadow: 0 4px 14px rgba(0,0,0,0.06); border: 1px solid #e5e7eb; transition: box-shadow 0.2s, transform 0.2s; overflow: hidden; }
+                        .shm-analysis .shm-analysis-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+                        .shm-analysis .shm-analysis-card .shm-icon-wrap { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; flex-shrink: 0; }
+                        .shm-analysis .shm-analysis-card .shm-value { font-size: 1.875rem; font-weight: 800; line-height: 1.2; letter-spacing: -0.02em; }
+                        .shm-analysis .shm-analysis-card .shm-label { font-size: 0.8125rem; font-weight: 600; color: #6b7280; margin-bottom: 0.25rem; }
+                        .shm-analysis .shm-analysis-card .shm-desc { font-size: 0.75rem; color: #9ca3af; margin-top: 0.25rem; }
+                        .shm-analysis .shm-section-card { border-radius: 16px; box-shadow: 0 4px 14px rgba(0,0,0,0.06); border: 1px solid #e5e7eb; padding: 1.5rem; }
+                        .shm-analysis .shm-section-title { font-size: 1rem; font-weight: 700; color: #374151; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
+                    </style>
+                    <!-- بطاقة العضو وتاريخ التحليل -->
+                    <div class="shm-section-card bg-gradient-to-r from-slate-50 to-blue-50/50 border-blue-100">
+                        <div class="flex flex-wrap items-center justify-between gap-4">
                             <div>
-                                <h3 class="text-2xl font-bold text-gray-800 mb-1">${Utils.escapeHTML(member.name || '')}</h3>
-                                <p class="text-gray-600">${Utils.escapeHTML(member.position || '')} - ${Utils.escapeHTML(member.department || '')}</p>
+                                <h3 class="text-xl font-bold text-gray-800 mb-1">${Utils.escapeHTML(member.name || '')}</h3>
+                                <p class="text-gray-600 text-sm">${Utils.escapeHTML(member.position || '')} — ${Utils.escapeHTML(member.department || '')}</p>
                             </div>
-                            <div class="text-right">
-                                <p class="text-sm text-gray-500">تاريخ التحليل</p>
-                                <p class="text-lg font-semibold text-gray-700">${new Date().toLocaleDateString('ar-SA')}</p>
+                            <div class="text-left">
+                                <p class="text-xs font-medium text-gray-500">تاريخ التحليل</p>
+                                <p class="text-base font-bold text-gray-700">${new Date().toLocaleDateString('ar-SA')}</p>
                             </div>
                         </div>
                     </div>
 
-                    <!-- إحصائيات سريعة -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                            <div class="flex items-center justify-between mb-2">
-                                <h4 class="font-semibold text-gray-700">الحوادث</h4>
-                                <i class="fas fa-exclamation-triangle text-red-500 text-xl"></i>
+                    <!-- إحصائيات سريعة: كل ما تم تسجيله باسم العضو على النظام -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                        <div class="shm-analysis-card bg-white p-5 flex items-start gap-4">
+                            <div class="shm-icon-wrap bg-emerald-100 text-emerald-600"><i class="fas fa-chalkboard-teacher"></i></div>
+                            <div class="min-w-0 flex-1">
+                                <p class="shm-label">التدريبات</p>
+                                <p class="shm-value text-emerald-600">${safe(stats.totalTrainings)}</p>
+                                <p class="shm-desc">عدد التدريبات التي شارك فيها</p>
                             </div>
-                            <p class="text-3xl font-bold text-red-600">${stats.totalIncidents}</p>
-                            <p class="text-sm text-gray-500 mt-1">إجمالي الحوادث المعالجة</p>
                         </div>
-
-                        <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                            <div class="flex items-center justify-between mb-2">
-                                <h4 class="font-semibold text-gray-700">Near Miss</h4>
-                                <i class="fas fa-exclamation-circle text-orange-500 text-xl"></i>
+                        <div class="shm-analysis-card bg-white p-5 flex items-start gap-4">
+                            <div class="shm-icon-wrap bg-indigo-100 text-indigo-600"><i class="fas fa-file-signature"></i></div>
+                            <div class="min-w-0 flex-1">
+                                <p class="shm-label">التصاريح (PTW)</p>
+                                <p class="shm-value text-indigo-600">${safe(stats.totalPTWs)}</p>
+                                <p class="shm-desc">عدد التصاريح المسجلة باسمه</p>
                             </div>
-                            <p class="text-3xl font-bold text-orange-600">${stats.totalNearMisses}</p>
-                            <p class="text-sm text-gray-500 mt-1">إجمالي الحوادث المحتملة</p>
                         </div>
-
-                        <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                            <div class="flex items-center justify-between mb-2">
-                                <h4 class="font-semibold text-gray-700">التفتيشات</h4>
-                                <i class="fas fa-search text-blue-500 text-xl"></i>
+                        <div class="shm-analysis-card bg-white p-5 flex items-start gap-4">
+                            <div class="shm-icon-wrap bg-blue-100 text-blue-600"><i class="fas fa-clipboard-check"></i></div>
+                            <div class="min-w-0 flex-1">
+                                <p class="shm-label">الجولات التفتيشية</p>
+                                <p class="shm-value text-blue-600">${safe(stats.totalInspections)}</p>
+                                <p class="shm-desc">عدد الجولات التفتيشية</p>
                             </div>
-                            <p class="text-3xl font-bold text-blue-600">${stats.totalInspections}</p>
-                            <p class="text-sm text-gray-500 mt-1">إجمالي الجولات التفتيشية</p>
                         </div>
-
-                        <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                            <div class="flex items-center justify-between mb-2">
-                                <h4 class="font-semibold text-gray-700">التدريبات</h4>
-                                <i class="fas fa-chalkboard-teacher text-green-500 text-xl"></i>
+                        <div class="shm-analysis-card bg-white p-5 flex items-start gap-4">
+                            <div class="shm-icon-wrap bg-purple-100 text-purple-600"><i class="fas fa-sticky-note"></i></div>
+                            <div class="min-w-0 flex-1">
+                                <p class="shm-label">الملاحظات</p>
+                                <p class="shm-value text-purple-600">${safe(stats.totalObservations)}</p>
+                                <p class="shm-desc">عدد الملاحظات المسجلة باسمه</p>
                             </div>
-                            <p class="text-3xl font-bold text-green-600">${stats.totalTrainings}</p>
-                            <p class="text-sm text-gray-500 mt-1">إجمالي التدريبات</p>
+                        </div>
+                        <div class="shm-analysis-card bg-white p-5 flex items-start gap-4">
+                            <div class="shm-icon-wrap bg-red-100 text-red-600"><i class="fas fa-exclamation-triangle"></i></div>
+                            <div class="min-w-0 flex-1">
+                                <p class="shm-label">الحوادث</p>
+                                <p class="shm-value text-red-600">${safe(stats.totalIncidents)}</p>
+                                <p class="shm-desc">إجمالي الحوادث المسجلة</p>
+                            </div>
+                        </div>
+                        <div class="shm-analysis-card bg-white p-5 flex items-start gap-4">
+                            <div class="shm-icon-wrap bg-amber-100 text-amber-600"><i class="fas fa-exclamation-circle"></i></div>
+                            <div class="min-w-0 flex-1">
+                                <p class="shm-label">Near Miss</p>
+                                <p class="shm-value text-amber-600">${safe(stats.totalNearMisses)}</p>
+                                <p class="shm-desc">الحوادث الوشيكة المسجلة</p>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- تفاصيل إضافية -->
+                    <!-- الحضور والأنشطة الأخرى -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                            <h4 class="font-semibold text-gray-700 mb-4 flex items-center">
-                                <i class="fas fa-calendar-check text-purple-500 ml-2"></i>
-                                الحضور والإجازات
-                            </h4>
-                            <div class="space-y-3">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-gray-600">أيام الحضور:</span>
-                                    <span class="font-bold text-green-600">${stats.presentDays}</span>
+                        <div class="shm-section-card bg-white">
+                            <h4 class="shm-section-title"><span class="shm-icon-wrap bg-purple-100 text-purple-600 w-9 h-9"><i class="fas fa-calendar-check"></i></span>الحضور والإجازات</h4>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                    <span class="text-gray-600 text-sm">أيام الحضور</span>
+                                    <span class="font-bold text-emerald-600">${safe(stats.presentDays)}</span>
                                 </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-gray-600">أيام الغياب:</span>
-                                    <span class="font-bold text-red-600">${stats.absentDays}</span>
+                                <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                    <span class="text-gray-600 text-sm">أيام الغياب</span>
+                                    <span class="font-bold text-red-600">${safe(stats.absentDays)}</span>
                                 </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-gray-600">معدل الحضور:</span>
+                                <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                    <span class="text-gray-600 text-sm">معدل الحضور</span>
                                     <span class="font-bold text-blue-600">${attendanceRate}%</span>
                                 </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-gray-600">الإجازات:</span>
-                                    <span class="font-bold text-purple-600">${stats.totalLeaves} (${stats.activeLeaves} نشطة)</span>
+                                <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                    <span class="text-gray-600 text-sm">الإجازات</span>
+                                    <span class="font-bold text-purple-600">${safe(stats.totalLeaves)} <span class="text-gray-400 font-normal text-xs">(${safe(stats.activeLeaves)} نشطة)</span></span>
                                 </div>
                             </div>
                         </div>
-
-                        <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                            <h4 class="font-semibold text-gray-700 mb-4 flex items-center">
-                                <i class="fas fa-tasks text-indigo-500 ml-2"></i>
-                                الأنشطة الأخرى
-                            </h4>
-                            <div class="space-y-3">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-gray-600">PTW:</span>
-                                    <span class="font-bold text-indigo-600">${stats.totalPTWs}</span>
+                        <div class="shm-section-card bg-white">
+                            <h4 class="shm-section-title"><span class="shm-icon-wrap bg-indigo-100 text-indigo-600 w-9 h-9"><i class="fas fa-tasks"></i></span>الأنشطة الأخرى</h4>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                    <span class="text-gray-600 text-sm">PTW</span>
+                                    <span class="font-bold text-indigo-600">${safe(stats.totalPTWs)}</span>
                                 </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-gray-600">المخالفات:</span>
-                                    <span class="font-bold text-yellow-600">${stats.totalViolations}</span>
+                                <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                    <span class="text-gray-600 text-sm">المخالفات</span>
+                                    <span class="font-bold text-amber-600">${safe(stats.totalViolations)}</span>
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     ${stats.latestKPI ? `
-                    <!-- مؤشرات الأداء الأخيرة -->
-                    <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                        <h4 class="font-semibold text-gray-700 mb-4 flex items-center">
-                            <i class="fas fa-chart-line text-blue-500 ml-2"></i>
-                            مؤشرات الأداء (آخر فترة)
-                        </h4>
+                    <!-- مؤشرات الأداء (آخر فترة) -->
+                    <div class="shm-section-card bg-white">
+                        <h4 class="shm-section-title"><span class="shm-icon-wrap bg-blue-100 text-blue-600 w-9 h-9"><i class="fas fa-chart-line"></i></span>مؤشرات الأداء (آخر فترة)</h4>
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div>
-                                <p class="text-sm text-gray-500">الجولات التفتيشية</p>
-                                <p class="text-2xl font-bold text-blue-600">${stats.latestKPI.inspectionsCount || 0}</p>
-                                <p class="text-xs text-gray-400">الهدف: ${stats.latestKPI.targetInspections || 20}</p>
+                            <div class="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                <p class="shm-label">الجولات التفتيشية</p>
+                                <p class="shm-value text-blue-600">${safe(k && k.inspectionsCount)}</p>
+                                <p class="shm-desc">الهدف: ${safe(k && k.targetInspections, 20)}</p>
                             </div>
-                            <div>
-                                <p class="text-sm text-gray-500">الإجراءات المغلقة</p>
-                                <p class="text-2xl font-bold text-green-600">${stats.latestKPI.closedActionsCount || 0}</p>
+                            <div class="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                <p class="shm-label">الإجراءات المغلقة</p>
+                                <p class="shm-value text-emerald-600">${safe(k && k.closedActionsCount)}</p>
                             </div>
-                            <div>
-                                <p class="text-sm text-gray-500">الملاحظات</p>
-                                <p class="text-2xl font-bold text-purple-600">${stats.latestKPI.observationsCount || 0}</p>
-                                <p class="text-xs text-gray-400">الهدف: ${stats.latestKPI.targetObservations || 15}</p>
+                            <div class="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                <p class="shm-label">الملاحظات</p>
+                                <p class="shm-value text-purple-600">${safe(k && k.observationsCount)}</p>
+                                <p class="shm-desc">الهدف: ${safe(k && k.targetObservations, 15)}</p>
                             </div>
-                            <div>
-                                <p class="text-sm text-gray-500">التدريبات</p>
-                                <p class="text-2xl font-bold text-orange-600">${stats.latestKPI.trainingsCount || 0}</p>
-                                <p class="text-xs text-gray-400">الهدف: ${stats.latestKPI.targetTrainings || 2}</p>
+                            <div class="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                <p class="shm-label">التدريبات</p>
+                                <p class="shm-value text-amber-600">${safe(k && k.trainingsCount)}</p>
+                                <p class="shm-desc">الهدف: ${safe(k && k.targetTrainings, 2)}</p>
                             </div>
                         </div>
                     </div>
                     ` : ''}
 
                     <!-- تفاصيل البيانات -->
-                    <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                        <h4 class="font-semibold text-gray-700 mb-4 flex items-center">
-                            <i class="fas fa-list text-gray-500 ml-2"></i>
-                            تفاصيل البيانات
-                        </h4>
+                    <div class="shm-section-card bg-white">
+                        <h4 class="shm-section-title"><span class="shm-icon-wrap bg-gray-100 text-gray-600 w-9 h-9"><i class="fas fa-list"></i></span>تفاصيل البيانات</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <h5 class="font-medium text-gray-600 mb-2">الحوادث (${stats.totalIncidents})</h5>
-                                <div class="space-y-1 max-h-40 overflow-y-auto">
+                                <h5 class="font-semibold text-gray-700 mb-2 text-sm">الحوادث (${safe(stats.totalIncidents)})</h5>
+                                <div class="space-y-1 max-h-40 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50/50 p-2">
                                     ${incidents.slice(0, 5).map(inc => `
-                                        <div class="text-sm text-gray-500 p-2 bg-gray-50 rounded">
-                                            ${Utils.escapeHTML(inc.title || inc.description || '')} - ${inc.date ? new Date(inc.date).toLocaleDateString('ar-SA') : ''}
+                                        <div class="text-sm text-gray-600 p-2 rounded bg-white border border-gray-100">
+                                            ${Utils.escapeHTML((inc.title || inc.description || '').slice(0, 60))}${(inc.title || inc.description || '').length > 60 ? '...' : ''} — ${inc.date ? new Date(inc.date).toLocaleDateString('ar-SA') : ''}
                                         </div>
                                     `).join('')}
-                                    ${incidents.length > 5 ? `<p class="text-xs text-gray-400 mt-2">و ${incidents.length - 5} أكثر...</p>` : ''}
+                                    ${incidents.length > 5 ? `<p class="text-xs text-gray-400 mt-2 px-2">و ${incidents.length - 5} أكثر...</p>` : ''}
                                 </div>
                             </div>
                             <div>
-                                <h5 class="font-medium text-gray-600 mb-2">التفتيشات (${stats.totalInspections})</h5>
-                                <div class="space-y-1 max-h-40 overflow-y-auto">
+                                <h5 class="font-semibold text-gray-700 mb-2 text-sm">التفتيشات (${safe(stats.totalInspections)})</h5>
+                                <div class="space-y-1 max-h-40 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50/50 p-2">
                                     ${inspections.slice(0, 5).map(ins => `
-                                        <div class="text-sm text-gray-500 p-2 bg-gray-50 rounded">
-                                            ${Utils.escapeHTML(ins.categoryName || ins.inspectionType || '')} - ${ins.inspectionDate ? new Date(ins.inspectionDate).toLocaleDateString('ar-SA') : ''}
+                                        <div class="text-sm text-gray-600 p-2 rounded bg-white border border-gray-100">
+                                            ${Utils.escapeHTML((ins.categoryName || ins.inspectionType || '').slice(0, 50))} — ${ins.inspectionDate ? new Date(ins.inspectionDate).toLocaleDateString('ar-SA') : ''}
                                         </div>
                                     `).join('')}
-                                    ${inspections.length > 5 ? `<p class="text-xs text-gray-400 mt-2">و ${inspections.length - 5} أكثر...</p>` : ''}
+                                    ${inspections.length > 5 ? `<p class="text-xs text-gray-400 mt-2 px-2">و ${inspections.length - 5} أكثر...</p>` : ''}
                                 </div>
                             </div>
                         </div>
