@@ -83,6 +83,17 @@
                     window.EnhancedLoader.fail('فشل تحميل التطبيق!');
                     window.EnhancedLoader.addError(error.message || 'خطأ غير معروف');
                 }
+                // إخفاء شاشة التحميل (إن كانت ظاهرة) وعرض شاشة الدخول لتجنب بقاء المستخدم على شاشة بيضاء أو تحميل
+                try {
+                    const loadingOverlay = document.getElementById('loading-overlay');
+                    if (loadingOverlay) {
+                        loadingOverlay.style.setProperty('display', 'none', 'important');
+                        loadingOverlay.style.setProperty('visibility', 'hidden', 'important');
+                    }
+                    if (typeof window.UI !== 'undefined' && typeof window.UI.showLoginScreen === 'function') {
+                        window.UI.showLoginScreen();
+                    }
+                } catch (e) { /* ignore */ }
             }
         },
 

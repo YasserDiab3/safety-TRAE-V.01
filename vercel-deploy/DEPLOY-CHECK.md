@@ -10,14 +10,15 @@
 | `styles.css` | التنسيقات الرئيسية، الموبايل، الستار والقائمة |
 | `styles-optimized.css` | نسخة محسّنة من التنسيقات |
 | `js/modules/app-ui.js` | واجهة التطبيق، إغلاق القائمة على الموبايل |
+| `js/app-bootstrap.js` | بدء التطبيق، استعادة الجلسة، معالجة فشل التحميل |
 | `UI-UX-COMPATIBILITY-REPORT.md` | تقرير توافق UI/UX |
 
 **لا يوجد تكرار:** كل ملف موجود مرة واحدة في `vercel-deploy/frontend`. عند التحديث في `Frontend`، انسخ الملفات أعلاه إلى `vercel-deploy/frontend` ثم ارفع إلى Git.
 
 ## ✅ التحقق من الرفع (Git)
 
-- **آخر مزامنة:** تم نسخ التحديثات من Frontend إلى vercel-deploy/frontend (رابط التخطي، إخفاء الستار، عرض القائمة على الموبايل، تبويبات المدولات، تقرير UI/UX).
-- **الملفات المرفوعة في مجلد النشر:** `index.html`, `styles.css`, `styles-optimized.css`, `js/modules/app-ui.js`, `UI-UX-COMPATIBILITY-REPORT.md`
+- **آخر مزامنة:** تم نسخ التحديثات من Frontend إلى vercel-deploy/frontend (إصلاح الشاشة البيضاء عند إعادة التحميل، رابط التخطي، إخفاء الستار، عرض القائمة على الموبايل، تبويبات المدولات، تقرير UI/UX).
+- **الملفات المرفوعة في مجلد النشر:** `index.html`, `styles.css`, `styles-optimized.css`, `js/modules/app-ui.js`, `js/app-bootstrap.js`, `UI-UX-COMPATIBILITY-REPORT.md`
 
 التحديثات **موجودة في مجلد النشر** `vercel-deploy/frontend` المخصّص لـ Vercel.
 

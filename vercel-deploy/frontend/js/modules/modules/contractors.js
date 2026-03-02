@@ -10773,23 +10773,28 @@ const Contractors = {
         const namesSet = new Set();
         if (contractorName) { namesSet.add(contractorName); namesSet.add(contractorName.toLowerCase()); }
         if (contractor.companyName) { namesSet.add(String(contractor.companyName).trim()); namesSet.add(String(contractor.companyName).trim().toLowerCase()); }
+        const nameMatchesContractorStrict = (vName) => {
+            if (!vName || typeof vName !== 'string') return false;
+            const v = vName.replace(/\s+/g, ' ').trim().toLowerCase();
+            const cn = (contractorName || '').toLowerCase();
+            const comp = (String(contractor.companyName || '').trim()).toLowerCase();
+            if (!v) return false;
+            if (v === cn || v === comp) return true;
+            if (cn && (v === cn || v.startsWith(cn) || cn.startsWith(v))) return true;
+            if (comp && (v === comp || v.startsWith(comp) || comp.startsWith(v))) return true;
+            return false;
+        };
         const matchesContractor = (record) => {
             if (!record) return false;
             const rId = normalize(record.contractorId) || normalize(record.contractorCode) || normalize(record.code);
             if (rId && idsSet.has(rId)) return true;
             if (record.contractorId != null && record.contractorId !== '' && idsSet.has(normalize(record.contractorId))) return true;
             if (record.contractorCode != null && record.contractorCode !== '' && idsSet.has(normalize(record.contractorCode))) return true;
-            // إذا كان contractorId مخزناً كاسم مقاول (وليس معرفاً)، مطابقته باسم المقاول
-            if (rId && contractorName && (rId === contractorName.toLowerCase() || rId.includes(contractorName.toLowerCase()) || contractorName.toLowerCase().includes(rId))) return true;
-            const companyNameNorm = (contractor.companyName || '').toString().trim().toLowerCase();
-            if (rId && companyNameNorm && (rId === companyNameNorm || rId.includes(companyNameNorm) || companyNameNorm.includes(rId))) return true;
+            if (rId && nameMatchesContractorStrict(rId)) return true;
             const rName = String(record.contractorName || record.companyName || record.company || record.contractorCompany || record.name || record.externalName || record.contractorWorkerName || record.contractorWorker || '').replace(/\s+/g, ' ').trim();
             if (!rName) return false;
             if (namesSet.has(rName) || namesSet.has(rName.toLowerCase())) return true;
-            if (contractorName && contractorName.toLowerCase() === rName.toLowerCase()) return true;
-            if (contractorName && rName.toLowerCase().includes(contractorName.toLowerCase())) return true;
-            if (contractorName && contractorName.toLowerCase().includes(rName.toLowerCase())) return true;
-            return false;
+            return nameMatchesContractorStrict(rName);
         };
         const matchesPtwContractor = (p) => {
             if (!p) return false;
@@ -10816,15 +10821,15 @@ const Contractors = {
         const violations = (AppState.appData.violations || []).filter(v => {
             if (!v) return false;
             const vPersonType = (v.personType || '').toString().trim().toLowerCase();
+            if (vPersonType === 'employee' || vPersonType === 'موظف') return false;
             const isContractorType = vPersonType === 'contractor' || vPersonType === 'مقاول';
             if (v.contractorId != null && v.contractorId !== '' && idsSet.has(normalize(v.contractorId))) return true;
             if (v.contractorId === contractorId || v.contractorId === contractor.contractorId) return true;
-            if (isContractorType || v.contractorName || v.contractorId) {
+            if (!isContractorType && !v.contractorName && (v.contractorId == null || v.contractorId === '')) return false;
+            if (isContractorType || v.contractorName || (v.contractorId != null && v.contractorId !== '')) {
                 if (matchesContractor(v)) return true;
                 const vName = String(v.contractorName || v.contractorId || '').replace(/\s+/g, ' ').trim();
-                if (contractorName && vName && (vName.toLowerCase() === contractorName.toLowerCase() || vName.toLowerCase().includes(contractorName.toLowerCase()) || contractorName.toLowerCase().includes(vName.toLowerCase()))) return true;
-                const cCompany = (contractor.companyName || '').toString().trim().toLowerCase();
-                if (cCompany && vName && (vName.toLowerCase() === cCompany || vName.toLowerCase().includes(cCompany) || cCompany.includes(vName.toLowerCase()))) return true;
+                if (vName && nameMatchesContractorStrict(vName)) return true;
             }
             return false;
         });

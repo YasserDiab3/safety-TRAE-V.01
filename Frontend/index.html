@@ -5626,7 +5626,7 @@
         </div>
     </div>
 
-    <!-- عند وجود جلسة محفوظة: إخفاء شاشة الدخول وإظهار التطبيق فوراً (بدون شاشة زرقاء أو سوداء) -->
+    <!-- عند وجود جلسة محفوظة: إخفاء شاشة الدخول وعرض شاشة "جاري التحميل" حتى ينتهي الـ bootstrap (تفادي الشاشة البيضاء عند إعادة التحميل) -->
     <script>
         (function() {
             try {
@@ -5634,6 +5634,11 @@
                     var loginEl = document.getElementById('login-screen');
                     if (loginEl) loginEl.style.display = 'none';
                     document.body.classList.add('app-active');
+                    var loadingEl = document.getElementById('loading-overlay');
+                    if (loadingEl) {
+                        loadingEl.style.setProperty('display', 'flex', 'important');
+                        loadingEl.style.setProperty('visibility', 'visible', 'important');
+                    }
                 }
             } catch (e) {}
         })();

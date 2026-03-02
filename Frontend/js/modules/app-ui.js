@@ -104,6 +104,13 @@ window.UI = {
         const restoreOverlay = document.getElementById('hse-session-restore-overlay');
         if (restoreOverlay && restoreOverlay.parentNode) restoreOverlay.remove();
 
+        // إخفاء شاشة التحميل إن كانت ظاهرة (عرضت عند وجود جلسة في السكربت المضمن)
+        const loadingOverlay = document.getElementById('loading-overlay');
+        if (loadingOverlay) {
+            loadingOverlay.style.setProperty('display', 'none', 'important');
+            loadingOverlay.style.setProperty('visibility', 'hidden', 'important');
+        }
+
         const loginScreen = document.getElementById('login-screen');
         const mainApp = document.getElementById('main-app');
         const usernameInput = document.getElementById('username');
@@ -2149,6 +2156,13 @@ window.UI = {
         // إزالة overlay استعادة الجلسة إن وُجد (بعد نجاح الاستعادة)
         const restoreOverlay = document.getElementById('hse-session-restore-overlay');
         if (restoreOverlay && restoreOverlay.parentNode) restoreOverlay.remove();
+
+        // إخفاء شاشة التحميل إن كانت ظاهرة (عرضت عند وجود جلسة في السكربت المضمن لتجنب الشاشة البيضاء)
+        const loadingOverlay = document.getElementById('loading-overlay');
+        if (loadingOverlay) {
+            loadingOverlay.style.setProperty('display', 'none', 'important');
+            loadingOverlay.style.setProperty('visibility', 'hidden', 'important');
+        }
 
         const loginScreen = document.getElementById('login-screen');
         const mainApp = document.getElementById('main-app');
