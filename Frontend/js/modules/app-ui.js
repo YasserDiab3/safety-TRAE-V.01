@@ -2516,15 +2516,38 @@ window.UI = {
     },
 
     /**
+     * مقارنة تسلسلية للإصدارات (مثلاً 1.0.2 أحدث من 1.0.1).
+     * @returns {number} 1 إذا a أحدث، -1 إذا b أحدث، 0 إذا متساويان
+     */
+    _compareVersions(a, b) {
+        if (!a || !b) return 0;
+        const parts = (v) => String(v).trim().split('.').map(n => parseInt(n, 10) || 0);
+        const pa = parts(a), pb = parts(b);
+        const len = Math.max(pa.length, pb.length);
+        for (let i = 0; i < len; i++) {
+            const na = pa[i] || 0, nb = pb[i] || 0;
+            if (na > nb) return 1;
+            if (na < nb) return -1;
+        }
+        return 0;
+    },
+
+    /**
      * عرض نافذة "هناك تحديث جديد" بإصدار معيّن (من التطبيق الحالي أو من الخادم).
-     * @param {string} newVersion - الإصدار الجديد المعروض للمستخدم
+     * لا تُعرض النافذة أكثر من مرة واحدة في الجلسة لنفس الإصدار.
+     * @param {string} newVersion - الإصدار الجديد المعروض للمستخدم (يجب أن يكون تسلسلياً، مثلاً 1.0.1)
      */
     _showUpdateModal(newVersion) {
+        const v = (newVersion && String(newVersion).trim()) || '';
+        if (!v) return;
         const storageKey = 'hse_last_seen_version';
+        const sessionShownKey = 'hse_update_modal_shown_version';
         if (document.getElementById('hse-update-message-modal')) return;
+        if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(sessionShownKey) === v) return;
+        try { if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(sessionShownKey, v); } catch (e) {}
         const message = (AppState.updateMessage && String(AppState.updateMessage).trim()) || 'تم إجراء تحديث على التطبيق. قد تتضمن التحديثات إضافات أو تحسينات جديدة. يرجى تحديث الصفحة للحصول على أحدث نسخة.';
         const safeMessage = (typeof Utils !== 'undefined' && Utils.escapeHTML) ? Utils.escapeHTML(message).replace(/\n/g, '<br>') : message.replace(/\n/g, '<br>');
-        const safeVersion = (typeof Utils !== 'undefined' && Utils.escapeHTML) ? Utils.escapeHTML(newVersion) : newVersion;
+        const safeVersion = (typeof Utils !== 'undefined' && Utils.escapeHTML) ? Utils.escapeHTML(v) : v;
         const modal = document.createElement('div');
         modal.id = 'hse-update-message-modal';
         modal.setAttribute('role', 'dialog');
@@ -2552,12 +2575,12 @@ window.UI = {
         }
 
         const onReload = () => {
-            try { if (typeof localStorage !== 'undefined') localStorage.setItem(storageKey, newVersion); } catch (e) {}
+            try { if (typeof localStorage !== 'undefined') localStorage.setItem(storageKey, v); } catch (e) {}
             if (modal && modal.parentNode) modal.remove();
             window.location.reload();
         };
         const onLater = () => {
-            try { if (typeof localStorage !== 'undefined') localStorage.setItem(storageKey, newVersion); } catch (e) {}
+            try { if (typeof localStorage !== 'undefined') localStorage.setItem(storageKey, v); } catch (e) {}
             if (modal && modal.parentNode) modal.remove();
         };
         const btnReload = modal.querySelector('#hse-update-message-reload');
@@ -2583,7 +2606,9 @@ window.UI = {
             const serverVersion = (data && data.version) ? String(data.version).trim() : '';
             if (!serverVersion) return;
             const currentVersion = (typeof AppState !== 'undefined' && AppState.appVersion) ? String(AppState.appVersion).trim() : '';
-            if (!currentVersion || serverVersion === currentVersion) return;
+            if (!currentVersion) return;
+            if (typeof this._compareVersions !== 'function') return;
+            if (this._compareVersions(serverVersion, currentVersion) <= 0) return;
             this._showUpdateModal(serverVersion);
         } catch (e) {
             if (AppState.debugMode && typeof Utils !== 'undefined' && Utils.safeWarn) Utils.safeWarn('⚠️ التحقق من إصدار الخادم:', e);

@@ -9700,13 +9700,35 @@ const Contractors = {
     },
 
     calculateContractorAnalytics(contractors, approvedContractors, evaluations, violations) {
-        // إجمالي المقاولين
-        const totalContractors = contractors.length;
-        
-        // المقاولين المعتمدين (من قائمة المعتمدين)
+        // قائمة موحدة للمقاولين المسجلين (من contractors و approvedContractors) بدون تكرار حسب id/contractorId/اسم
+        const seenIds = new Set();
+        const mergedContractors = [];
+        const addUnique = (list) => {
+            if (!Array.isArray(list)) return;
+            list.forEach((c, idx) => {
+                if (!c || typeof c !== 'object') return;
+                const id = (c.id || c.contractorId || (c.companyName || c.name || '').toString().trim() || `_idx_${idx}`);
+                if (seenIds.has(id)) return;
+                seenIds.add(id);
+                mergedContractors.push({
+                    ...c,
+                    _endDate: c.endDate || c.expiryDate,
+                    _status: (c.status || '').toString().trim()
+                });
+            });
+        };
+        addUnique(contractors);
+        addUnique(approvedContractors);
+
+        // إجمالي المقاولين المسجلين = عدد السجلات الفريدة في القائمتين
+        const totalContractors = mergedContractors.length;
+
+        // المقاولين المعتمدين: كل سجل في قائمة المعتمدين يُحسب معتمداً ما لم تكن حالته صريحة غير معتمدة
         const totalApproved = approvedContractors.filter(ac => {
-            const status = (ac.status || '').toLowerCase();
-            return status === 'approved' || status === 'معتمد' || status === 'نشط';
+            const status = (ac.status || '').toString().trim();
+            const s = status.toLowerCase();
+            if (!status) return true; // وجود السجل في قائمة المعتمدين = معتمد
+            return s === 'approved' || s === 'معتمد' || s === 'نشط' || s === 'active';
         }).length;
 
         // إجمالي التقييمات
@@ -9714,8 +9736,8 @@ const Contractors = {
 
         // إجمالي المخالفات (جميع المخالفات المتعلقة بالمقاولين)
         const totalViolations = violations.filter(v => {
-            return v.contractorName || 
-                   v.contractorId || 
+            return v.contractorName ||
+                   v.contractorId ||
                    (v.personType && (v.personType === 'contractor' || v.personType === 'مقاول'));
         }).length;
 
@@ -9725,27 +9747,28 @@ const Contractors = {
             const validScores = evaluations
                 .map(e => parseFloat(e.finalScore) || parseFloat(e.score) || 0)
                 .filter(score => !isNaN(score) && score >= 0 && score <= 100);
-            
+
             if (validScores.length > 0) {
                 const sum = validScores.reduce((acc, score) => acc + score, 0);
                 avgScore = sum / validScores.length;
             }
         }
 
-        // المقاولين النشطين (من قائمة المقاولين)
-        const activeContractors = contractors.filter(c => {
-            const status = (c.status || '').toString().trim();
-            return status === 'نشط' || status === 'active' || status === 'معتمد';
+        // المقاولين النشطين (من القائمة الموحدة)
+        const activeContractors = mergedContractors.filter(c => {
+            const s = (c._status || (c.status || '').toString()).toLowerCase();
+            return s === 'نشط' || s === 'active' || s === 'معتمد' || s === 'approved';
         }).length;
 
-        // المقاولين المنتهية عقودهم
+        // المقاولين المنتهية عقودهم (من القائمة الموحدة، endDate أو expiryDate)
         const now = new Date();
         now.setHours(0, 0, 0, 0);
-        
-        const expiredContractors = contractors.filter(c => {
-            if (!c.endDate) return false;
+
+        const expiredContractors = mergedContractors.filter(c => {
+            const endDateVal = c._endDate || c.endDate || c.expiryDate;
+            if (!endDateVal) return false;
             try {
-                const endDate = new Date(c.endDate);
+                const endDate = new Date(endDateVal);
                 endDate.setHours(0, 0, 0, 0);
                 return endDate < now;
             } catch (e) {
@@ -9755,10 +9778,11 @@ const Contractors = {
 
         // المقاولين قريبين من الانتهاء (خلال 30 يوم)
         const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-        const expiringSoon = contractors.filter(c => {
-            if (!c.endDate) return false;
+        const expiringSoon = mergedContractors.filter(c => {
+            const endDateVal = c._endDate || c.endDate || c.expiryDate;
+            if (!endDateVal) return false;
             try {
-                const endDate = new Date(c.endDate);
+                const endDate = new Date(endDateVal);
                 endDate.setHours(0, 0, 0, 0);
                 return endDate >= now && endDate <= thirtyDaysFromNow;
             } catch (e) {
@@ -10569,6 +10593,11 @@ const Contractors = {
         };
 
         return `
+            <style>
+                .contractor-analytics-view-btn { color: #111; }
+                [data-theme="dark"] .contractor-analytics-view-btn { background: #4b5563 !important; color: #f3f4f6 !important; }
+                [data-theme="dark"] .contractor-analytics-view-btn:hover { background: #6b7280 !important; }
+            </style>
             <div class="content-card border-2 border-gray-200 rounded-xl shadow-lg overflow-hidden">
                 <div class="card-header bg-gradient-to-r from-indigo-50 via-purple-50 to-indigo-50 border-b-2 border-indigo-200">
                     <div class="flex items-center justify-between p-4">
@@ -10589,7 +10618,8 @@ const Contractors = {
                     <div class="overflow-x-auto" style="max-height: 70vh; overflow-y: auto; min-width: 100%;">
                         <table class="data-table w-full" style="border-collapse: collapse; table-layout: fixed; min-width: 900px;">
                             <colgroup>
-                                <col style="width: 18%;">
+                                <col style="width: 4%;">
+                                <col style="width: 16%;">
                                 <col style="width: 14%;">
                                 <col style="width: 10%;">
                                 <col style="width: 8%;">
@@ -10597,11 +10627,12 @@ const Contractors = {
                                 <col style="width: 8%;">
                                 <col style="width: 6%;">
                                 <col style="width: 10%;">
-                                <col style="width: 16%;">
+                                <col style="width: 14%;">
                             </colgroup>
                             <thead style="position: sticky; top: 0; z-index: 10; background: #e0e7ff; box-shadow: 0 2px 0 0 #c7d2fe;">
                                 <tr>
-                                    <th class="px-4 py-3 text-right font-bold text-indigo-900 border-b-2 border-indigo-200" style="background: #e0e7ff; white-space: nowrap;">اسم المقاول</th>
+                                    <th class="px-2 py-3 text-center font-bold text-indigo-900 border-b-2 border-indigo-200" style="background: #e0e7ff; white-space: nowrap;" scope="col">#</th>
+                                    <th id="header-اسم-المقاول" class="px-4 py-3 text-right font-bold text-indigo-900 border-b-2 border-indigo-200" style="background: #e0e7ff; white-space: nowrap;" scope="col">اسم المقاول</th>
                                     <th class="px-4 py-3 text-center font-bold text-indigo-900 border-b-2 border-indigo-200" style="background: #e0e7ff; white-space: nowrap;">نوع الخدمة</th>
                                     <th class="px-4 py-3 text-center font-bold text-indigo-900 border-b-2 border-indigo-200" style="background: #e0e7ff; white-space: nowrap;">حالة العقد</th>
                                     <th class="px-4 py-3 text-center font-bold text-indigo-900 border-b-2 border-indigo-200" style="background: #e0e7ff; white-space: nowrap;">التقييمات</th>
@@ -10616,19 +10647,17 @@ const Contractors = {
                                 ${contractorsWithStats.map((contractor, index) => {
                                     return `
                                     <tr class="hover:bg-indigo-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-                                        <td class="px-4 py-3 text-right align-middle" style="overflow: hidden; text-overflow: ellipsis;">
-                                            <div class="flex items-center justify-end">
-                                                <div class="flex-shrink-0 w-8 h-8 bg-indigo-100 rounded-md flex items-center justify-center ml-3">
-                                                    <span class="text-indigo-600 font-bold text-sm">${index + 1}</span>
-                                                </div>
-                                                <div style="min-width: 0;">
-                                                    <strong class="text-gray-800 font-semibold block truncate">${Utils.escapeHTML(contractor.name || contractor.companyName || '')}</strong>
-                                                    <span class="text-xs text-gray-500">
-                                                        <span class="badge badge-${(contractor.status || '').toString().trim() === 'نشط' ? 'success' : 'danger'} text-xs">
-                                                            ${contractor.status || '-'}
-                                                        </span>
+                                        <td class="px-2 py-3 text-center align-middle">
+                                            <span class="inline-flex w-8 h-8 items-center justify-center rounded-full bg-gray-200 text-gray-700 font-bold text-sm">${index + 1}</span>
+                                        </td>
+                                        <td class="px-4 py-3 text-right align-middle" style="overflow: hidden; text-overflow: ellipsis;" headers="header-اسم-المقاول">
+                                            <div style="min-width: 0;">
+                                                <strong class="text-gray-800 font-semibold block truncate text-right">${Utils.escapeHTML(contractor.name || contractor.companyName || '')}</strong>
+                                                <span class="text-xs text-gray-500 mt-1 block text-right">
+                                                    <span class="badge badge-${['نشط', 'approved', 'معتمد', 'active'].includes((contractor.status || '').toString().trim().toLowerCase()) ? 'success' : 'danger'} text-xs">
+                                                        ${contractor.status || '-'}
                                                     </span>
-                                                </div>
+                                                </span>
                                             </div>
                                         </td>
                                         <td class="px-4 py-3 text-center align-middle" style="overflow: hidden; text-overflow: ellipsis;">
@@ -10674,10 +10703,10 @@ const Contractors = {
                                         </td>
                                         <td class="px-4 py-3 text-center align-middle">
                                             <button onclick="Contractors.viewContractorAnalytics('${contractor.id}')" 
-                                                    class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium text-sm" 
+                                                    class="contractor-analytics-view-btn inline-flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm bg-gray-200 hover:bg-gray-300 text-gray-900 dark:bg-gray-600 dark:hover:bg-gray-500 dark:text-gray-100" 
                                                     title="عرض التفاصيل">
-                                                <i class="fas fa-eye ml-2"></i>
-                                                عرض
+                                                <i class="fas fa-eye"></i>
+                                                <span>عرض</span>
                                             </button>
                                         </td>
                                     </tr>
