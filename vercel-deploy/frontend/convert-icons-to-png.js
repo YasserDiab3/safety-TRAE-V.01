@@ -35,6 +35,7 @@ async function convertToPng(size) {
 
         if (fs.existsSync(logoPath)) {
             const img = await loadImage(logoPath);
+            // Draw image scaled to fit (cover) the square, centered
             const s = Math.max(img.width, img.height);
             const dx = (size - size * (img.width / s)) / 2;
             const dy = (size - size * (img.height / s)) / 2;

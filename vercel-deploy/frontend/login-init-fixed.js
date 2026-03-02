@@ -276,6 +276,7 @@
 
                 const ok = await window.GoogleIntegration.syncUsers(true);
                 if (ok) {
+                    // تعطيل bootstrap بعد نجاح المزامنة إن لزم
                     try {
                         if (window.Auth && typeof window.Auth.handleUsersSyncSuccess === 'function') {
                             window.Auth.handleUsersSyncSuccess();
@@ -876,14 +877,10 @@ Yasser.diab@icapp.com.eg`;
                         errorMsg = 'خدمات Google غير متاحة حالياً. يرجى المحاولة لاحقاً أو التحقق من إعدادات Google Sheets.';
                     }
                     
-                    // على نطاق Vercel/منشور: إضافة تلميح عند فشل الدخول (اتصال أو بيانات)
-                    var isDeployed = typeof window !== 'undefined' && window.location && window.location.hostname && 
-                        (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('netlify.app'));
-                    if (isDeployed && (errorMsg.indexOf('البريد الإلكتروني أو كلمة المرور') !== -1 || errorMsg.indexOf('Google Apps Script') !== -1 || errorMsg.indexOf('لا يوجد مستخدمون') !== -1)) {
-                        errorMsg += '\n\n💡 تأكد من "إعداد المزامنة" (رابط الخادم صحيح) ووجود مستخدمين في ورقة Users.';
-                    }
+                    // تسجيل قصير للمستخدم
                     var _shortMsg = (result && result.message && typeof result.message === 'string') ? result.message.split('\n')[0] : errorMsg;
                     console.error('❌ فشل تسجيل الدخول:', _shortMsg);
+                    
                     if (typeof window.Notification !== 'undefined') {
                         window.Notification.error(errorMsg);
                     } else {
@@ -896,7 +893,9 @@ Yasser.diab@icapp.com.eg`;
             } catch (error) {
                 console.error('❌ خطأ في تسجيل الدخول:', error);
                 let errorMsg = 'حدث خطأ: ' + (error.message || error);
-                var errorStr = String(error.message || error || '').toLowerCase();
+                
+                // التحقق من أخطاء الاتصال
+                const errorStr = String(error.message || error || '').toLowerCase();
                 if (errorStr.includes('cert_authority_invalid') || 
                     errorStr.includes('certificate') ||
                     errorStr.includes('err_cert') ||
@@ -906,10 +905,8 @@ Yasser.diab@icapp.com.eg`;
                 } else if (errorStr.includes('networkerror') || 
                            errorStr.includes('failed to fetch') ||
                            errorStr.includes('timeout') ||
-                           errorStr.includes('network') ||
-                           errorStr.includes('cors') ||
-                           errorStr.includes('connection')) {
-                    errorMsg = 'فشل الاتصال بالخادم (Google Apps Script). تأكد من: 1) رابط الخادم صحيح في "إعداد المزامنة" 2) نشر التطبيق كـ Web App مع "من له حق الوصول: أي شخص".';
+                           errorStr.includes('network')) {
+                    errorMsg = 'فشل الاتصال بالخادم. يرجى التحقق من الاتصال بالإنترنت وإعادة المحاولة.';
                 } else if (errorStr.includes('google') && 
                            (errorStr.includes('غير متاح') || 
                             errorStr.includes('not available') ||
@@ -917,15 +914,13 @@ Yasser.diab@icapp.com.eg`;
                             errorStr.includes('error'))) {
                     errorMsg = 'خدمات Google غير متاحة حالياً. يرجى المحاولة لاحقاً أو التحقق من إعدادات Google Sheets.';
                 }
-                if (typeof window !== 'undefined' && window.location && window.location.hostname && 
-                    (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('netlify.app'))) {
-                    errorMsg += '\n\n💡 استخدم زر "إعداد المزامنة" أدناه لإدخال رابط الخادم الصحيح.';
-                }
+                
                 if (typeof window.Notification !== 'undefined') {
                     window.Notification.error(errorMsg);
                 } else {
                     alert(errorMsg);
                 }
+                
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = originalBtnText;
             }

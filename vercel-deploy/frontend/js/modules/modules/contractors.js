@@ -10773,6 +10773,7 @@ const Contractors = {
         const namesSet = new Set();
         if (contractorName) { namesSet.add(contractorName); namesSet.add(contractorName.toLowerCase()); }
         if (contractor.companyName) { namesSet.add(String(contractor.companyName).trim()); namesSet.add(String(contractor.companyName).trim().toLowerCase()); }
+        // مطابقة اسمية صارمة: تطابق تام أو أن أحد الاسمين يبدأ بالآخر فقط (لتجنب ربط مخالفات لشخص آخر مثل "محمد تمري" مع مقاول "تمري")
         const nameMatchesContractorStrict = (vName) => {
             if (!vName || typeof vName !== 'string') return false;
             const v = vName.replace(/\s+/g, ' ').trim().toLowerCase();
