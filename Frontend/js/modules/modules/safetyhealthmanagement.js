@@ -89,6 +89,8 @@ const SafetyHealthManagement = {
         // إذا لم يكن مفعلاً ولا توجد بيانات محلية
         return 'Google Apps Script غير مفعّل. يرجى تفعيله من الإعدادات';
     },
+    // حد أقصى لزمن تحميل التبويبات (2 ثانية) ثم عرض واجهة فوراً مع استكمال التحميل في الخلفية
+    LOAD_TIMEOUT_MS: 2000,
     // تحسينات الأداء: Cache و Debounce
     cache: {
         members: null,
@@ -97,7 +99,61 @@ const SafetyHealthManagement = {
         jobDescriptionsLastLoad: null,
         kpis: new Map(),
         lastLoad: null,
-        cacheTimeout: 3 * 60 * 1000 // 3 دقائق (تحسين الأداء)
+        cacheTimeout: 2 * 60 * 1000 // 2 دقيقة لاستخدام الكاش عند التنقل بين التبويبات
+    },
+    /** سباق مع مهلة: إن انتهت المهلة قبل اكتمال الوعد يُرفض بـ { timeout: true } والوعد الأصلي يستمر في الخلفية */
+    _raceWithTimeout(promise, ms) {
+        const t = ms != null ? ms : this.LOAD_TIMEOUT_MS;
+        let tid;
+        const timeoutPromise = new Promise((_, reject) => {
+            tid = setTimeout(() => reject({ timeout: true }), t);
+        });
+        return Promise.race([promise, timeoutPromise]).then(
+            (r) => { clearTimeout(tid); return r; },
+            (e) => { clearTimeout(tid); throw e; }
+        );
+    },
+    /** استخراج قائمة الأعضاء من الكاش إن كانت حديثة (ضمن cacheTimeout) */
+    _getMembersFromCache() {
+        if (this.cache.members && this.cache.lastLoad != null &&
+            (Date.now() - this.cache.lastLoad) < this.cache.cacheTimeout) {
+            return this.cache.members;
+        }
+        return null;
+    },
+    /** رسم الهيكل الوظيفي داخل الحاوية (للاستخدام بعد انتهاء التحميل) */
+    _renderStructureIntoContainer(container, structure) {
+        if (!container || !Array.isArray(structure)) return;
+        if (structure.length === 0) {
+            container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا يوجد هيكل وظيفي مسجل</p></div>';
+            return;
+        }
+        structure.sort((a, b) => (a.order || 0) - (b.order || 0));
+        this.cache.structure = structure;
+        this.cache.lastLoad = Date.now();
+        container.innerHTML = structure.map(item => `
+            <div class="org-node" data-id="${item.id}">
+                <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                        <h3 class="font-semibold text-gray-800">${Utils.escapeHTML(item.position || '')}</h3>
+                        <p class="text-sm text-gray-600">${Utils.escapeHTML(item.memberName || 'غير محدد')}</p>
+                        <p class="text-xs text-gray-500">${Utils.escapeHTML(item.positionLevel || '')}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="SafetyHealthManagement.editStructure('${item.id}')" class="btn-icon btn-icon-primary"><i class="fas fa-edit"></i></button>
+                        <button onclick="SafetyHealthManagement.deleteStructure('${item.id}')" class="btn-icon btn-icon-danger"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        requestAnimationFrame(() => {
+            const addBtn = document.getElementById('add-structure-btn');
+            if (addBtn) {
+                const newBtn = addBtn.cloneNode(true);
+                addBtn.parentNode.replaceChild(newBtn, addBtn);
+                newBtn.addEventListener('click', () => this.showStructureForm());
+            }
+        });
     },
     // منع العمليات المتزامنة
     loadingStates: {
@@ -979,13 +1035,17 @@ const SafetyHealthManagement = {
             return;
         }
 
-        // إن لم يكن هناك كاش، عرض هيكل سكيليتون (شكل بطاقات) لتحسين الإحساس بالسرعة
-        if (!this.cache.members || this.cache.members.length === 0) {
+        // إن لم يكن هناك كاش، عرض هيكل سكيليتون فوراً (تحميل خلال 2 ثانية كحد أقصى)
+        const cached = this._getMembersFromCache();
+        if (cached && cached.length > 0) {
+            this.allMembers = cached;
+            this.loadFilterOptions(cached);
+            this.renderTeamMembers(cached);
+        } else if (!this.cache.members || this.cache.members.length === 0) {
             container.innerHTML = this.getTeamListSkeletonHTML();
         }
 
         try {
-            // التحقق من إمكانية الوصول للبيانات
             const accessMessage = this.getDataAccessMessage('getSafetyTeamMembers', {});
             if (accessMessage) {
                 container.innerHTML = `<div class="empty-state col-span-full"><p class="text-yellow-600">${accessMessage}</p></div>`;
@@ -993,10 +1053,37 @@ const SafetyHealthManagement = {
                 return;
             }
 
-            const response = await GoogleIntegration.sendRequest({
+            const fetchPromise = GoogleIntegration.sendRequest({
                 action: 'getSafetyTeamMembers',
                 data: {}
             });
+            let response;
+            try {
+                response = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    if ((!cached || cached.length === 0) && container) {
+                        container.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">جاري التحميل...</p></div>';
+                    }
+                    fetchPromise.then((r) => {
+                        if (r && r.success && r.data) {
+                            const members = Array.isArray(r.data) ? r.data : [];
+                            this.allMembers = members;
+                            this.cache.members = members;
+                            this.cache.lastLoad = Date.now();
+                            if (members.length === 0) {
+                                const c = document.getElementById('team-members-list');
+                                if (c) c.innerHTML = '<div class="empty-state col-span-full"><p class="text-gray-500">لا توجد أعضاء مسجلين</p></div>';
+                            } else {
+                                this.loadFilterOptions(members);
+                                this.renderTeamMembers(members);
+                            }
+                        }
+                    }).catch(() => {});
+                }
+                this.loadingStates.team = false;
+                return;
+            }
 
             if (response && response.success && response.data) {
                 const members = Array.isArray(response.data) ? response.data : [];
@@ -1648,67 +1735,41 @@ const SafetyHealthManagement = {
             return;
         }
 
-        // التحقق من إمكانية الوصول للبيانات
         const accessMessage = this.getDataAccessMessage('getOrganizationalStructure', {});
         if (accessMessage) {
             container.innerHTML = `<div class="empty-state"><p class="text-gray-500">${accessMessage}</p></div>`;
-            Loading.hide();
             this.loadingStates.structure = false;
             return;
         }
 
         try {
-            Loading.show();
-            const response = await GoogleIntegration.sendRequest({
+            container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
+            const fetchPromise = GoogleIntegration.sendRequest({
                 action: 'getOrganizationalStructure',
                 data: {}
             });
+            let response;
+            try {
+                response = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
+                    fetchPromise.then((r) => {
+                        if (r && r.success && r.data) {
+                            const structure = Array.isArray(r.data) ? r.data : [];
+                            const c = document.getElementById('organizational-structure-container');
+                            if (c) this._renderStructureIntoContainer(c, structure);
+                        }
+                        this.loadingStates.structure = false;
+                    }).catch(() => { this.loadingStates.structure = false; });
+                    return;
+                }
+                throw timeoutErr;
+            }
 
             if (response.success && response.data) {
                 const structure = Array.isArray(response.data) ? response.data : [];
-
-                if (structure.length === 0) {
-                    container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا يوجد هيكل وظيفي مسجل</p></div>';
-                    Loading.hide();
-                    return;
-                }
-
-                // Sort by order
-                structure.sort((a, b) => (a.order || 0) - (b.order || 0));
-
-                // حفظ في Cache
-                this.cache.structure = structure;
-                this.cache.lastLoad = Date.now();
-
-                container.innerHTML = structure.map(item => `
-                    <div class="org-node" data-id="${item.id}">
-                        <div class="flex items-center justify-between">
-                            <div class="flex-1">
-                                <h3 class="font-semibold text-gray-800">${Utils.escapeHTML(item.position || '')}</h3>
-                                <p class="text-sm text-gray-600">${Utils.escapeHTML(item.memberName || 'غير محدد')}</p>
-                                <p class="text-xs text-gray-500">${Utils.escapeHTML(item.positionLevel || '')}</p>
-                            </div>
-                            <div class="flex gap-2">
-                                <button onclick="SafetyHealthManagement.editStructure('${item.id}')" class="btn-icon btn-icon-primary">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                                <button onclick="SafetyHealthManagement.deleteStructure('${item.id}')" class="btn-icon btn-icon-danger">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-
-                // Setup add button فوراً
-                requestAnimationFrame(() => {
-                    const addBtn = document.getElementById('add-structure-btn');
-                    if (addBtn) {
-                        const newBtn = addBtn.cloneNode(true);
-                        addBtn.parentNode.replaceChild(newBtn, addBtn);
-                        newBtn.addEventListener('click', () => this.showStructureForm());
-                    }
-                });
+                this._renderStructureIntoContainer(container, structure);
             } else {
                 container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا يوجد هيكل وظيفي مسجل</p></div>';
                 // Setup add button even when there's no data
@@ -1737,7 +1798,7 @@ const SafetyHealthManagement = {
                 setTimeout(() => {
                     this.loadOrganizationalStructure();
                 }, 1000);
-                Loading.hide();
+                this.loadingStates.structure = false;
                 return;
             }
 
@@ -1775,7 +1836,6 @@ const SafetyHealthManagement = {
                 </div>
             `;
         } finally {
-            Loading.hide();
             this.loadingStates.structure = false;
         }
     },
@@ -2145,6 +2205,42 @@ const SafetyHealthManagement = {
         `;
     },
 
+    /** جلب أوصاف الوظائف لأعضاء معيّنين مع مهلة 2 ثانية */
+    async _loadJobDescriptionsFetch(members) {
+        const container = document.getElementById('job-descriptions-list');
+        if (!container || !members || members.length === 0) return;
+        const jdPromises = members.map(member =>
+            GoogleIntegration.sendRequest({ action: 'getJobDescription', data: { memberId: member.id } })
+                .then(jdResponse => (jdResponse && jdResponse.success && jdResponse.data)
+                    ? { ...jdResponse.data, member }
+                    : { member, hasDescription: false })
+                .catch(() => ({ member, hasDescription: false }))
+        );
+        const fetchPromise = Promise.all(jdPromises);
+        try {
+            const jobDescriptions = await this._raceWithTimeout(fetchPromise);
+            this.cache.jobDescriptions = jobDescriptions;
+            this.cache.jobDescriptionsLastLoad = Date.now();
+            const c = document.getElementById('job-descriptions-list');
+            if (c) {
+                c.innerHTML = jobDescriptions.length === 0
+                    ? '<div class="empty-state"><p class="text-gray-500">لا توجد أوصاف وظيفية مسجلة</p></div>'
+                    : this._renderJobDescriptionsList(jobDescriptions);
+            }
+        } catch (e) {
+            if (e && e.timeout) {
+                fetchPromise.then((jobDescriptions) => {
+                    this.cache.jobDescriptions = jobDescriptions;
+                    this.cache.jobDescriptionsLastLoad = Date.now();
+                    const c = document.getElementById('job-descriptions-list');
+                    if (c) c.innerHTML = jobDescriptions.length === 0
+                        ? '<div class="empty-state"><p class="text-gray-500">لا توجد أوصاف وظيفية مسجلة</p></div>'
+                        : this._renderJobDescriptionsList(jobDescriptions);
+                }).catch(() => {});
+            } else throw e;
+        }
+    },
+
     async loadJobDescriptions() {
         const container = document.getElementById('job-descriptions-list');
         if (!container) return;
@@ -2155,53 +2251,48 @@ const SafetyHealthManagement = {
             return;
         }
 
-        // عرض كاش الأوصاف فوراً إن وُجد
         const cacheValid = this.cache.jobDescriptions && this.cache.jobDescriptionsLastLoad &&
             (Date.now() - this.cache.jobDescriptionsLastLoad) < this.cache.cacheTimeout;
-        if (cacheValid && Array.isArray(this.cache.jobDescriptions) && this.cache.jobDescriptions.length > 0) {
+        if (cacheValid && this.cache.jobDescriptions.length > 0) {
             container.innerHTML = this._renderJobDescriptionsList(this.cache.jobDescriptions);
             return;
         }
-        if (this.cache.jobDescriptions && this.cache.jobDescriptions.length > 0) {
-            container.innerHTML = this._renderJobDescriptionsList(this.cache.jobDescriptions);
-        } else {
-            container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
-        }
+        container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
 
         try {
-            const membersResponse = await GoogleIntegration.sendRequest({
-                action: 'getSafetyTeamMembers',
-                data: {}
-            });
-
-            if (membersResponse.success && membersResponse.data) {
-                const members = Array.isArray(membersResponse.data) ? membersResponse.data : [];
-
-                if (members.length === 0) {
-                    container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا توجد أعضاء لإضافة أوصاف وظيفية</p></div>';
-                    return;
+            let members = this._getMembersFromCache();
+            let membersPromise = null;
+            if (!members || members.length === 0) {
+                membersPromise = GoogleIntegration.sendRequest({ action: 'getSafetyTeamMembers', data: {} });
+                try {
+                    const membersResponse = await this._raceWithTimeout(membersPromise);
+                    if (membersResponse && membersResponse.success && membersResponse.data) {
+                        members = Array.isArray(membersResponse.data) ? membersResponse.data : [];
+                        this.cache.members = members;
+                        this.cache.lastLoad = Date.now();
+                    }
+                } catch (timeoutErr) {
+                    if (timeoutErr && timeoutErr.timeout) {
+                        membersPromise.then((r) => {
+                            if (r && r.success && r.data) {
+                                const m = Array.isArray(r.data) ? r.data : [];
+                                this.cache.members = m;
+                                this.cache.lastLoad = Date.now();
+                                if (m.length > 0) this._loadJobDescriptionsFetch(m);
+                            }
+                        }).catch(() => {});
+                        return;
+                    }
+                    throw timeoutErr;
                 }
-
-                // تحميل أوصاف الوظائف بالتوازي (أسرع بكثير من طلب لكل عضو)
-                const jdPromises = members.map(member =>
-                    GoogleIntegration.sendRequest({ action: 'getJobDescription', data: { memberId: member.id } })
-                        .then(jdResponse => (jdResponse && jdResponse.success && jdResponse.data)
-                            ? { ...jdResponse.data, member }
-                            : { member, hasDescription: false })
-                        .catch(() => ({ member, hasDescription: false }))
-                );
-                const jobDescriptions = await Promise.all(jdPromises);
-
-                this.cache.jobDescriptions = jobDescriptions;
-                this.cache.jobDescriptionsLastLoad = Date.now();
-
-                if (jobDescriptions.length === 0) {
-                    container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا توجد أوصاف وظيفية مسجلة</p></div>';
-                    return;
-                }
-
-                container.innerHTML = this._renderJobDescriptionsList(jobDescriptions);
             }
+
+            if (!members || members.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا توجد أعضاء لإضافة أوصاف وظيفية</p></div>';
+                return;
+            }
+
+            await this._loadJobDescriptionsFetch(members);
         } catch (error) {
             // تجاهل أخطاء Chrome Extensions تلقائياً
             const errorMessage = error?.message || error?.toString() || 'خطأ غير معروف';
@@ -2443,6 +2534,36 @@ const SafetyHealthManagement = {
         `;
     },
 
+    _fillKPIsDropdown(members) {
+        const memberSelect = document.getElementById('kpi-member-select');
+        const periodSelect = document.getElementById('kpi-period-select');
+        const calculateBtn = document.getElementById('calculate-kpis-btn');
+        if (!memberSelect) return;
+        memberSelect.innerHTML = '<option value="">اختر عضو الفريق</option>' +
+            (members || []).map(m => `
+                <option value="${m.id}" ${m.id === this.currentMemberId ? 'selected' : ''}>
+                    ${Utils.escapeHTML(m.name || '')}
+                </option>
+            `).join('');
+        if (periodSelect) {
+            const now = new Date();
+            let periodOptions = '<option value="">الفترة الحالية</option>';
+            for (let i = 0; i < 6; i++) {
+                const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+                periodOptions += `<option value="${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}">${monthNames[date.getMonth()]} ${date.getFullYear()}</option>`;
+            }
+            periodSelect.innerHTML = periodOptions;
+        }
+        memberSelect.removeEventListener('change', this._boundLoadMemberKPIs);
+        this._boundLoadMemberKPIs = () => this.loadMemberKPIs();
+        memberSelect.addEventListener('change', this._boundLoadMemberKPIs);
+        if (periodSelect) {
+            periodSelect.onchange = () => { if (memberSelect.value) this.loadMemberKPIs(); };
+        }
+        if (calculateBtn) calculateBtn.onclick = () => this.calculateKPIs();
+    },
+
     async loadKPIs() {
         const container = document.getElementById('kpis-container');
         const memberSelect = document.getElementById('kpi-member-select');
@@ -2454,7 +2575,6 @@ const SafetyHealthManagement = {
             return;
         }
 
-        // التحقق من إمكانية الوصول للبيانات
         const accessMessage = this.getDataAccessMessage('getSafetyTeamKPIs', {});
         if (accessMessage) {
             memberSelect.innerHTML = `<option value="">${accessMessage}</option>`;
@@ -2462,60 +2582,51 @@ const SafetyHealthManagement = {
             return;
         }
 
+        let members = this._getMembersFromCache();
+        if (members && members.length > 0) {
+            this._fillKPIsDropdown(members);
+            if (this.currentMemberId && memberSelect.value === this.currentMemberId) {
+                this.loadMemberKPIs();
+            } else {
+                container.innerHTML = '<div class="empty-state"><p class="text-gray-500">اختر عضو الفريق لحساب مؤشرات الأداء</p></div>';
+            }
+        } else {
+            container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
+        }
+
         try {
-            // Load team members for dropdown
-            const membersResponse = await GoogleIntegration.sendRequest({
-                action: 'getSafetyTeamMembers',
-                data: {}
-            });
-
-            if (membersResponse.success && membersResponse.data) {
-                const members = Array.isArray(membersResponse.data) ? membersResponse.data : [];
-                memberSelect.innerHTML = '<option value="">اختر عضو الفريق</option>' +
-                    members.map(m => `
-                        <option value="${m.id}" ${m.id === this.currentMemberId ? 'selected' : ''}>
-                            ${Utils.escapeHTML(m.name || '')}
-                        </option>
-                    `).join('');
-
-                // Generate period options dynamically
-                if (periodSelect) {
-                    const now = new Date();
-                    const currentYear = now.getFullYear();
-                    const currentMonth = now.getMonth();
-                    let periodOptions = '<option value="">الفترة الحالية</option>';
-
-                    // Add last 6 months
-                    for (let i = 0; i < 6; i++) {
-                        const date = new Date(currentYear, currentMonth - i, 1);
-                        const year = date.getFullYear();
-                        const month = String(date.getMonth() + 1).padStart(2, '0');
-                        const period = `${year}-${month}`;
-                        const monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-                        periodOptions += `<option value="${period}">${monthNames[date.getMonth()]} ${year}</option>`;
-                    }
-                    periodSelect.innerHTML = periodOptions;
-                }
-
-                // Setup event listeners
-                memberSelect.addEventListener('change', () => this.loadMemberKPIs());
-                if (periodSelect) {
-                    periodSelect.addEventListener('change', () => {
-                        if (memberSelect.value) {
-                            this.loadMemberKPIs();
+            const fetchPromise = GoogleIntegration.sendRequest({ action: 'getSafetyTeamMembers', data: {} });
+            let response;
+            try {
+                response = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    fetchPromise.then((membersResponse) => {
+                        if (membersResponse && membersResponse.success && membersResponse.data) {
+                            const m = Array.isArray(membersResponse.data) ? membersResponse.data : [];
+                            this.cache.members = m;
+                            this.cache.lastLoad = Date.now();
+                            this._fillKPIsDropdown(m);
+                            const sel = document.getElementById('kpi-member-select');
+                            if (this.currentMemberId && sel && sel.value === this.currentMemberId) this.loadMemberKPIs();
                         }
-                    });
+                    }).catch(() => {});
                 }
-                if (calculateBtn) {
-                    calculateBtn.addEventListener('click', () => this.calculateKPIs());
-                }
+                return;
+            }
 
-                // Auto-load KPIs if member is already selected
+            if (response && response.success && response.data) {
+                members = Array.isArray(response.data) ? response.data : [];
+                this.cache.members = members;
+                this.cache.lastLoad = Date.now();
+                this._fillKPIsDropdown(members);
                 if (this.currentMemberId && memberSelect.value === this.currentMemberId) {
                     this.loadMemberKPIs();
+                } else {
+                    container.innerHTML = '<div class="empty-state"><p class="text-gray-500">اختر عضو الفريق لحساب مؤشرات الأداء</p></div>';
                 }
             } else {
-                const errorMessage = membersResponse.message || 'فشل تحميل أعضاء الفريق';
+                const errorMessage = response && response.message ? response.message : 'فشل تحميل أعضاء الفريق';
                 container.innerHTML = `<div class="empty-state"><p class="text-red-500">${Utils.escapeHTML(errorMessage)}</p></div>`;
             }
         } catch (error) {
@@ -2614,11 +2725,32 @@ const SafetyHealthManagement = {
         }
 
         try {
-            Loading.show();
-            const response = await GoogleIntegration.sendRequest({
+            const fetchPromise = GoogleIntegration.sendRequest({
                 action: 'getSafetyTeamKPIs',
                 data: { memberId: memberId, period: period || null }
             });
+            let response;
+            try {
+                response = await this._raceWithTimeout(fetchPromise);
+            } catch (timeoutErr) {
+                if (timeoutErr && timeoutErr.timeout) {
+                    if (container) container.innerHTML = '<div class="empty-state"><p class="text-gray-500">جاري التحميل...</p></div>';
+                    fetchPromise.then((r) => {
+                        if (r && r.success && r.data) {
+                            const kpis = Array.isArray(r.data) ? r.data : [r.data];
+                            const kpi = kpis.length > 0 ? kpis[0] : null;
+                            const c = document.getElementById('kpis-container');
+                            if (c && kpi) {
+                                this.renderKPIs(kpi, c);
+                                this.cache.kpis.set(cacheKey, { data: kpi, timestamp: Date.now() });
+                            }
+                        }
+                        this.loadingStates.kpis = false;
+                    }).catch(() => { this.loadingStates.kpis = false; });
+                    return;
+                }
+                throw timeoutErr;
+            }
 
             if (response.success && response.data) {
                 const kpis = Array.isArray(response.data) ? response.data : [response.data];
@@ -2626,7 +2758,7 @@ const SafetyHealthManagement = {
 
                 if (!kpi) {
                     container.innerHTML = '<div class="empty-state"><p class="text-gray-500">لا توجد مؤشرات أداء محسوبة. اضغط على "حساب KPIs"</p></div>';
-                    Loading.hide();
+                    this.loadingStates.kpis = false;
                     return;
                 }
 
