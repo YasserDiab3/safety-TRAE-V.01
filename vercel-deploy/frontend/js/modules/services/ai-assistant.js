@@ -416,9 +416,9 @@ const AIAssistant = {
                 incidents: []
             };
             
-            // الحصول على المخالفات
+            // الحصول على المخالفات (محلي فقط — سريع)
             try {
-                const violations = AppState.appData.violations || [];
+                const violations = AppState.appData.Violations || AppState.appData.violations || [];
                 employeeData.violations = violations.filter(v => 
                     (v.employeeCode === employeeCode || 
                      v.employeeNumber === employeeCode ||
@@ -435,20 +435,9 @@ const AIAssistant = {
                 Utils.safeWarn('⚠️ خطأ في الحصول على المخالفات:', error);
             }
             
-            // الحصول على بيانات التدريب
+            // الحصول على بيانات التدريب (محلي فقط لتسريع الرد — بدون استدعاء Backend)
             try {
-                if (typeof GoogleIntegration !== 'undefined' && GoogleIntegration.sendToAppsScript) {
-                    const trainingResult = await GoogleIntegration.sendToAppsScript('getEmployeeTrainingMatrix', {
-                        employeeId: employeeId
-                    });
-                    
-                    if (trainingResult && trainingResult.success && trainingResult.data) {
-                        employeeData.training = trainingResult.data;
-                    }
-                }
-                
-                // الحصول على سجلات التدريب
-                const allTrainings = AppState.appData.training || [];
+                const allTrainings = AppState.appData.Training || AppState.appData.training || [];
                 employeeData.trainingRecords = allTrainings.filter(t => {
                     if (!t.participants) return false;
                     const participants = Array.isArray(t.participants) ? t.participants : [];
@@ -464,21 +453,10 @@ const AIAssistant = {
             } catch (error) {
                 Utils.safeWarn('⚠️ خطأ في الحصول على بيانات التدريب:', error);
             }
-            
-            // الحصول على مهمات الوقاية
+
+            // الحصول على مهمات الوقاية (محلي فقط لتسريع الرد)
             try {
-                if (typeof GoogleIntegration !== 'undefined' && GoogleIntegration.sendToAppsScript) {
-                    const ppeResult = await GoogleIntegration.sendToAppsScript('getPPEMatrix', {
-                        employeeId: employeeId
-                    });
-                    
-                    if (ppeResult && ppeResult.success && ppeResult.data) {
-                        employeeData.ppe = ppeResult.data;
-                    }
-                }
-                
-                // الحصول على سجلات مهمات الوقاية
-                const ppeRecords = AppState.appData.ppe || [];
+                const ppeRecords = AppState.appData.PPE || AppState.appData.ppe || [];
                 employeeData.ppeRecords = ppeRecords.filter(p => 
                     p.employeeCode === employeeCode ||
                     p.employeeNumber === employeeCode ||
@@ -493,81 +471,33 @@ const AIAssistant = {
                 Utils.safeWarn('⚠️ خطأ في الحصول على مهمات الوقاية:', error);
             }
             
-            // الحصول على زيارات العيادة
+            // الحصول على زيارات العيادة (محلي فقط لتسريع الرد)
             try {
-                if (typeof GoogleIntegration !== 'undefined' && GoogleIntegration.sendToAppsScript) {
-                    const clinicResult = await GoogleIntegration.sendToAppsScript('getAllClinicVisits', {
-                        filters: {
-                            employeeCode: employeeCode,
-                            personType: 'employee'
-                        }
-                    });
-                    
-                    if (clinicResult && clinicResult.success && clinicResult.data) {
-                        employeeData.clinicVisits = clinicResult.data.sort((a, b) => {
-                            const dateA = new Date(a.visitDate || a.createdAt || 0);
-                            const dateB = new Date(b.visitDate || b.createdAt || 0);
-                            return dateB - dateA;
-                        });
-                    }
-                } else {
-                    // استخدام البيانات المحلية
-                    const clinicVisits = AppState.appData.clinicVisits || [];
-                    employeeData.clinicVisits = clinicVisits.filter(v => 
-                        (v.employeeCode === employeeCode ||
-                         v.employeeNumber === employeeCode ||
-                         v.employeeCode === employee.employeeNumber ||
-                         v.employeeNumber === employee.employeeNumber) &&
-                        v.personType === 'employee'
-                    ).sort((a, b) => {
-                        const dateA = new Date(a.visitDate || a.createdAt || 0);
-                        const dateB = new Date(b.visitDate || b.createdAt || 0);
-                        return dateB - dateA;
-                    });
-                }
+                const clinicVisits = AppState.appData.Clinic || AppState.appData.clinicVisits || [];
+                employeeData.clinicVisits = clinicVisits.filter(v =>
+                    (v.employeeCode === employeeCode || v.employeeNumber === employeeCode ||
+                     v.employeeCode === employee.employeeNumber || v.employeeNumber === employee.employeeNumber) &&
+                    (v.personType === 'employee' || !v.personType)
+                ).sort((a, b) => new Date(b.visitDate || b.createdAt || 0) - new Date(a.visitDate || a.createdAt || 0));
             } catch (error) {
                 Utils.safeWarn('⚠️ خطأ في الحصول على زيارات العيادة:', error);
             }
-            
-            // الحصول على الإصابات
+
+            // الحصول على الإصابات (محلي فقط)
             try {
-                if (typeof GoogleIntegration !== 'undefined' && GoogleIntegration.sendToAppsScript) {
-                    const injuriesResult = await GoogleIntegration.sendToAppsScript('getAllInjuries', {
-                        filters: {
-                            employeeCode: employeeCode,
-                            personType: 'employee'
-                        }
-                    });
-                    
-                    if (injuriesResult && injuriesResult.success && injuriesResult.data) {
-                        employeeData.injuries = injuriesResult.data.sort((a, b) => {
-                            const dateA = new Date(a.injuryDate || a.createdAt || 0);
-                            const dateB = new Date(b.injuryDate || b.createdAt || 0);
-                            return dateB - dateA;
-                        });
-                    }
-                } else {
-                    // استخدام البيانات المحلية
-                    const injuries = AppState.appData.injuries || [];
-                    employeeData.injuries = injuries.filter(i => 
-                        (i.employeeCode === employeeCode ||
-                         i.employeeNumber === employeeCode ||
-                         i.employeeCode === employee.employeeNumber ||
-                         i.employeeNumber === employee.employeeNumber) &&
-                        i.personType === 'employee'
-                    ).sort((a, b) => {
-                        const dateA = new Date(a.injuryDate || a.createdAt || 0);
-                        const dateB = new Date(b.injuryDate || b.createdAt || 0);
-                        return dateB - dateA;
-                    });
-                }
+                const injuries = AppState.appData.injuries || [];
+                employeeData.injuries = injuries.filter(i =>
+                    (i.employeeCode === employeeCode || i.employeeNumber === employeeCode ||
+                     i.employeeCode === employee.employeeNumber || i.employeeNumber === employee.employeeNumber) &&
+                    (i.personType === 'employee' || !i.personType)
+                ).sort((a, b) => new Date(b.injuryDate || b.createdAt || 0) - new Date(a.injuryDate || a.createdAt || 0));
             } catch (error) {
                 Utils.safeWarn('⚠️ خطأ في الحصول على الإصابات:', error);
             }
-            
-            // الحصول على الحوادث
+
+            // الحصول على الحوادث (محلي فقط)
             try {
-                const incidents = AppState.appData.incidents || [];
+                const incidents = AppState.appData.Incidents || AppState.appData.incidents || [];
                 employeeData.incidents = incidents.filter(inc => {
                     // البحث في المتأثرين
                     if (inc.affectedPersons && Array.isArray(inc.affectedPersons)) {
@@ -1001,15 +931,16 @@ const AIAssistant = {
     },
     
     /**
-     * البحث عن موظف بالكود
+     * البحث عن موظف بالكود (يدعم employees و Employees)
      */
     findEmployeeByCode(code) {
-        const employees = AppState.appData.employees || [];
-        return employees.find(emp => 
-            emp.job === code ||
-            emp.employeeNumber === code ||
-            emp.sapId === code ||
-            (emp.id && emp.id.toString() === code.toString())
+        const codeStr = String(code).trim();
+        const employees = AppState.appData.Employees || AppState.appData.employees || [];
+        return employees.find(emp =>
+            (emp.job && String(emp.job).trim() === codeStr) ||
+            (emp.employeeNumber && String(emp.employeeNumber).trim() === codeStr) ||
+            (emp.sapId && String(emp.sapId).trim() === codeStr) ||
+            (emp.id && String(emp.id).trim() === codeStr)
         );
     },
 
@@ -1017,7 +948,7 @@ const AIAssistant = {
      * البحث عن موظف برقم الموظف
      */
     findEmployeeByNumber(number) {
-        const employees = AppState.appData.employees || [];
+        const employees = AppState.appData.Employees || AppState.appData.employees || [];
         return employees.find(emp => 
             emp.employeeNumber === number ||
             emp.sapId === number
@@ -1028,7 +959,7 @@ const AIAssistant = {
      * البحث عن موظف بالاسم
      */
     findEmployeeByName(name) {
-        const employees = AppState.appData.employees || [];
+        const employees = AppState.appData.Employees || AppState.appData.employees || [];
         const nameLower = name.toLowerCase().trim();
         return employees.find(emp => 
             emp.name && emp.name.toLowerCase().includes(nameLower)

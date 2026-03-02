@@ -364,8 +364,9 @@ const UserAIAssistant = {
         const content = document.createElement('div');
         content.className = 'user-ai-message-content';
 
-        // معالجة النص (دعم الأسطر المتعددة والتنسيق)
-        const textContent = this.formatMessageText(text);
+        // معالجة النص (دعم الأسطر المتعددة والتنسيق) — منع عرض رد فارغ
+        const displayText = (text !== undefined && text !== null && String(text).trim()) ? text : 'لم أتمكن من إرجاع رد. يرجى صياغة السؤال بشكل أوضح أو المحاولة لاحقاً.';
+        const textContent = this.formatMessageText(displayText);
         content.appendChild(textContent);
 
         // إضافة معلومات إضافية (وقت الاستجابة، الموديول، إلخ)
@@ -550,17 +551,20 @@ const UserAIAssistant = {
                         conversationHistory: this.conversationHistory.slice(-5)
                     });
                     
-                    if (response && response.success) {
-                        // تحديث السياق
-                        this.updateContext(enhancedMessage, response);
-                        
-                        return {
-                            text: response.text || response.message,
-                            data: response.data,
-                            intent: response.intent,
-                            module: response.module,
-                            actions: response.actions || []
-                        };
+                    if (response) {
+                        // تحديث السياق عند النجاح
+                        if (response.success) this.updateContext(enhancedMessage, response);
+                        // إرجاع النص دائماً (حتى عند عدم العثور على موظف) لتفادي رد فارغ
+                        const text = response.text || response.message;
+                        if (text) {
+                            return {
+                                text: text,
+                                data: response.data,
+                                intent: response.intent,
+                                module: response.module,
+                                actions: response.actions || []
+                            };
+                        }
                     }
                 } catch (error) {
                     Utils.safeWarn('⚠️ خطأ في استخدام AIAssistant:', error);
