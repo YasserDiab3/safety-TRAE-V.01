@@ -956,6 +956,11 @@ function getUserSpecificRecommendations(userId, context) {
 const GEMINI_API_KEY = 'AIzaSyAD7S2HF5RwKFlp0Ijags9a7c9o57Z3o2Y';
 const GEMINI_MODEL = 'gemini-1.5-flash';
 
+// Cache للإحصاءات لتجنب إعادة قراءة الشيتات في كل طلب
+var _hseStatsCache = null;
+var _hseStatsCacheTime = 0;
+var HSE_STATS_CACHE_TTL = 5 * 60 * 1000; // 5 دقائق
+
 /**
  * استدعاء Gemini API مع سياق بيانات HSE المباشرة من الشيتات
  * @param {string} question - سؤال المستخدم
@@ -964,24 +969,38 @@ const GEMINI_MODEL = 'gemini-1.5-flash';
  */
 function askGeminiWithHSEContext(question, context) {
   try {
-    const hseStats = buildHSEStatsForGemini();
+    // استخدام البيانات المُمررة أولاً، وإذا لم تتوفر نجلب من Cache أو الشيتات
+    var hseStats = context.localStats || buildHSEStatsForGemini();
+
+    // بناء سياق البيانات الهيكلية إن وُجدت
+    var structuredDataSection = '';
+    if (context.structuredData) {
+      structuredDataSection = '\n\nبيانات مستخرجة من النظام ذات صلة بالسؤال:\n' + context.structuredData;
+    }
+
+    var intentNote = '';
+    if (context.intentType && context.intentType !== 'general') {
+      intentNote = '\n- نوع الطلب المكتشف: ' + context.intentType;
+    }
 
     const systemPrompt =
       'أنت مساعد ذكاء اصطناعي متخصص في إدارة السلامة والصحة المهنية (HSE).\n' +
       'دورك: الإجابة على أسئلة فريق HSE باللغة العربية بدقة واحترافية.\n\n' +
-      'البيانات الإحصائية الحالية للنظام:\n' +
-      JSON.stringify(hseStats, null, 2) + '\n\n' +
-      'معلومات إضافية:\n' +
-      '- المستخدم الحالي: ' + (context.userName || 'غير محدد') + '\n' +
+      'ملخص إحصائي حالي للنظام:\n' +
+      JSON.stringify(hseStats, null, 2) +
+      structuredDataSection + '\n\n' +
+      'معلومات المستخدم:\n' +
+      '- الاسم: ' + (context.userName || 'غير محدد') + '\n' +
       '- الدور الوظيفي: ' + (context.userRole || 'غير محدد') + '\n' +
-      '- التاريخ الحالي: ' + new Date().toLocaleDateString('ar-SA') + '\n\n' +
+      '- التاريخ الحالي: ' + new Date().toLocaleDateString('ar-SA') +
+      intentNote + '\n\n' +
       'تعليمات الإجابة:\n' +
-      '1. أجب دائماً باللغة العربية\n' +
-      '2. استخدم البيانات الإحصائية المقدمة إذا كانت ذات صلة بالسؤال\n' +
-      '3. إذا لم تجد إجابة في البيانات، قدم معلومات HSE عامة مفيدة ودقيقة\n' +
-      '4. كن محدداً وعملياً في إجاباتك\n' +
-      '5. استخدم رموزاً تعبيرية مناسبة لتوضيح الفقرات\n' +
-      '6. إذا كان السؤال يحتاج بيانات تفصيلية غير متوفرة، وجّه المستخدم لاستخدام الوحدة المناسبة في النظام';
+      '1. أجب دائماً باللغة العربية بشكل مباشر وواضح\n' +
+      '2. استخدم الأرقام والإحصاءات من البيانات المقدمة أعلاه\n' +
+      '3. إذا لم تجد بيانات كافية، قدم معلومات HSE عامة مفيدة ودقيقة\n' +
+      '4. كن محدداً وعملياً - لا تقل "لا أعلم" بل قدم ما تستطيع\n' +
+      '5. استخدم رموزاً تعبيرية مناسبة (📊 🔴 ✅ ⚠️) لتوضيح الفقرات\n' +
+      '6. اجعل الإجابة موجزة (3-8 أسطر إلا إذا طُلب تفصيل أكثر)';
 
     const payload = {
       contents: [{
@@ -1039,11 +1058,17 @@ function askGeminiWithHSEContext(question, context) {
 }
 
 /**
- * بناء ملخص إحصائي من بيانات الشيتات لتغذية Gemini
+ * بناء ملخص إحصائي من بيانات الشيتات لتغذية Gemini (مع Cache لتسريع الاستجابة)
  * @return {Object} إحصاءات موجزة من جميع الوحدات
  */
 function buildHSEStatsForGemini() {
   try {
+    // إرجاع من Cache إذا كانت البيانات حديثة (أقل من 5 دقائق)
+    var nowMs = Date.now();
+    if (_hseStatsCache && (nowMs - _hseStatsCacheTime) < HSE_STATS_CACHE_TTL) {
+      return _hseStatsCache;
+    }
+
     const spreadsheetId = getSpreadsheetId();
     const stats = {};
     const now = new Date();
@@ -1106,10 +1131,13 @@ function buildHSEStatsForGemini() {
       }
     });
 
+    // تخزين في Cache
+    _hseStatsCache = stats;
+    _hseStatsCacheTime = Date.now();
     return stats;
   } catch (error) {
     Logger.log('Error in buildHSEStatsForGemini: ' + error.toString());
-    return {};
+    return _hseStatsCache || {};
   }
 }
 
@@ -1141,54 +1169,61 @@ function processAIQuestion(question, context = {}) {
         let responseText = '';
         let actions = [];
         
+        // جمع البيانات الهيكلية أولاً (سريع - من الشيتات)
+        var fallbackText = '';
         switch (intent.type) {
             case 'analyze':
             case 'statistics':
             case 'report':
                 responseData = handleAnalysisQuestion(intent, parameters, context);
-                responseText = generateAnalysisResponse(responseData, intent, parameters);
+                fallbackText = generateAnalysisResponse(responseData, intent, parameters);
                 break;
-                
+
             case 'search':
             case 'find':
             case 'list':
                 responseData = handleSearchQuestion(intent, parameters, context);
-                responseText = generateSearchResponse(responseData, intent, parameters);
+                fallbackText = generateSearchResponse(responseData, intent, parameters);
                 break;
-                
+
             case 'count':
             case 'number':
                 responseData = handleCountQuestion(intent, parameters, context);
-                responseText = generateCountResponse(responseData, intent, parameters);
+                fallbackText = generateCountResponse(responseData, intent, parameters);
                 break;
-                
+
             case 'status':
             case 'check':
                 responseData = handleStatusQuestion(intent, parameters, context);
-                responseText = generateStatusResponse(responseData, intent, parameters);
+                fallbackText = generateStatusResponse(responseData, intent, parameters);
                 break;
-                
+
             case 'recommendation':
             case 'suggestion':
                 responseData = handleRecommendationQuestion(intent, parameters, context);
-                responseText = generateRecommendationResponse(responseData, intent, parameters);
+                fallbackText = generateRecommendationResponse(responseData, intent, parameters);
                 break;
-                
+
             case 'help':
             case 'howto':
-                var helpGemini = askGeminiWithHSEContext(question, context);
-                responseText = helpGemini || generateHelpResponse(intent, parameters);
+                fallbackText = generateHelpResponse(intent, parameters);
                 break;
-                
+
             default:
-                // استخدام Gemini للإجابة على الأسئلة غير المصنفة
-                var geminiAnswer = askGeminiWithHSEContext(question, context);
-                if (geminiAnswer) {
-                    responseText = geminiAnswer;
-                } else {
-                    responseText = generateDefaultResponse(question, context);
-                }
+                fallbackText = generateDefaultResponse(question, context);
         }
+
+        // استخدام Gemini لكل الأسئلة مع تمرير البيانات الهيكلية كسياق
+        var geminiContext = {
+            userId: context.userId || null,
+            userName: context.userName || null,
+            userRole: context.userRole || null,
+            intentType: intent.type,
+            localStats: context.localStats || null,
+            structuredData: responseData ? JSON.stringify(responseData).substring(0, 3000) : null
+        };
+        var geminiAnswer = askGeminiWithHSEContext(question, geminiContext);
+        responseText = geminiAnswer || fallbackText;
         
         // إضافة أزرار الإجراءات السريعة
         if (targetModule) {
