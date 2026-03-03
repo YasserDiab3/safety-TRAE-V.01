@@ -4972,7 +4972,7 @@ const PDFTemplates = {
             .replace(/<table(?![^>]*class=)/g, '<table class="report-table"')
             .replace(/<ul(?![^>]*class=)/g, '<ul class="report-list"');
 
-        const excludedMetaKeys = ['version', 'releaseDate', 'revisionDate', 'issueDate', 'includeQRCode', 'qrData', 'modifiedAt'];
+        const excludedMetaKeys = ['version', 'releaseDate', 'revisionDate', 'issueDate', 'includeQRCode', 'qrData', 'modifiedAt', 'titleEn', 'titleAr'];
         const metaRows = Object.entries(meta || {})
             .filter(([key, value]) => value !== undefined && value !== null && value !== '' && !excludedMetaKeys.includes(key))
             .map(([key, value]) => `
@@ -5105,6 +5105,34 @@ const PDFTemplates = {
             color: #003865;
             line-height: 1.3;
             letter-spacing: 0.6px;
+        }
+        .header-title-dual {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            text-align: center;
+        }
+        .header-title-dual .header-title-en {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 800;
+            color: #003865;
+            line-height: 1.3;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #003865;
+            padding-bottom: 2px;
+        }
+        .header-title-dual .header-title-ar {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 800;
+            color: #003865;
+            line-height: 1.3;
+            letter-spacing: 0.6px;
+            border-bottom: 2px solid #003865;
+            padding-bottom: 2px;
         }
         .header-meta {
             display: flex;
@@ -5531,7 +5559,9 @@ const PDFTemplates = {
                 </div>
             </div>
             <div class="header-info">
-                <h1>${escape(title || '')}</h1>
+                ${(meta && meta.titleEn != null && meta.titleAr != null)
+            ? `<div class="header-title-dual"><div class="header-title-en">${escape(meta.titleEn)}</div><div class="header-title-ar">${escape(meta.titleAr)}</div></div>`
+            : `<h1>${escape(title || '')}</h1>`}
                 ${metaRows ? `<div class="meta-block">${metaRows}</div>` : ''}
             </div>
             <div class="report-logo">

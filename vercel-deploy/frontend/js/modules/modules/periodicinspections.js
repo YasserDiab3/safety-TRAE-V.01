@@ -2867,12 +2867,86 @@ const PeriodicInspections = {
         }
     },
 
+    getDailySafetyCheckListStats(records) {
+        const list = records || this.getDailySafetyCheckListRecords();
+        const now = new Date();
+        const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const total = list.length;
+        const thisMonth = list.filter(r => {
+            const d = r.date ? new Date(r.date) : (r.createdAt ? new Date(r.createdAt) : null);
+            return d && d >= thisMonthStart;
+        }).length;
+        const shift1 = list.filter(r => r.shift === 'الأولى').length;
+        const shift2 = list.filter(r => r.shift === 'الثانية').length;
+        const shift3 = list.filter(r => r.shift === 'الثالثة').length;
+        return { total, thisMonth, shift1, shift2, shift3 };
+    },
+
     async renderDailySafetyCheckListContent() {
         const records = this.getDailySafetyCheckListRecords();
+        const stats = this.getDailySafetyCheckListStats(records);
         return `
             <div class="flex flex-col sm:flex-row gap-3 items-center justify-between mb-4">
                 <h3 class="text-xl font-bold text-gray-800"><i class="fas fa-tasks ml-2"></i>Daily Safety Check List</h3>
-                <button type="button" id="daily-safety-checklist-add-btn" class="btn-primary"><i class="fas fa-plus ml-2"></i>إضافة سجل</button>
+                <div class="flex gap-2 flex-wrap">
+                    <button type="button" id="daily-safety-checklist-export-excel-btn" class="btn-secondary" title="تصدير السجل كامل إلى Excel"><i class="fas fa-file-excel ml-2"></i>تصدير Excel</button>
+                    <button type="button" id="daily-safety-checklist-export-pdf-btn" class="btn-secondary" title="تصدير السجل كامل إلى PDF"><i class="fas fa-file-pdf ml-2"></i>تصدير PDF</button>
+                    <button type="button" id="daily-safety-checklist-add-btn" class="btn-primary"><i class="fas fa-plus ml-2"></i>إضافة سجل</button>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="content-card bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-blue-700 mb-1">إجمالي السجلات</p>
+                                <p class="text-3xl font-bold text-blue-800">${stats.total}</p>
+                            </div>
+                            <div class="bg-blue-500 rounded-full p-3">
+                                <i class="fas fa-file-alt text-white text-2xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="content-card bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-200">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-indigo-700 mb-1">هذا الشهر</p>
+                                <p class="text-3xl font-bold text-indigo-800">${stats.thisMonth}</p>
+                            </div>
+                            <div class="bg-indigo-500 rounded-full p-3">
+                                <i class="fas fa-calendar-alt text-white text-2xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="content-card bg-gradient-to-br from-green-50 to-green-100 border border-green-200">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-green-700 mb-1">الوردية الأولى</p>
+                                <p class="text-3xl font-bold text-green-800">${stats.shift1}</p>
+                            </div>
+                            <div class="bg-green-500 rounded-full p-3">
+                                <i class="fas fa-sun text-white text-2xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="content-card bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-orange-700 mb-1">الوردية الثانية / الثالثة</p>
+                                <p class="text-3xl font-bold text-orange-800">${stats.shift2 + stats.shift3}</p>
+                            </div>
+                            <div class="bg-orange-500 rounded-full p-3">
+                                <i class="fas fa-moon text-white text-2xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="content-card">
                 <div class="card-header"><h2 class="card-title"><i class="fas fa-list ml-2"></i>سجل قائمة الفحص اليومي للسلامة</h2></div>
@@ -2890,7 +2964,8 @@ const PeriodicInspections = {
                 <td>${Utils.escapeHTML(r.inspectorName || '-')}</td>
                 <td>${Utils.escapeHTML(r.shift || '-')}</td>
                 <td class="text-left">
-                    <button type="button" class="btn-icon btn-icon-primary ml-2" onclick="PeriodicInspections.showDailySafetyCheckListForm('${Utils.escapeHTML(r.id)}')" title="عرض/تعديل"><i class="fas fa-edit"></i></button>
+                    <button type="button" class="btn-icon btn-icon-info ml-2" onclick="PeriodicInspections.showDailySafetyCheckListView('${Utils.escapeHTML(r.id)}')" title="عرض"><i class="fas fa-eye"></i></button>
+                    <button type="button" class="btn-icon btn-icon-primary" onclick="PeriodicInspections.showDailySafetyCheckListForm('${Utils.escapeHTML(r.id)}')" title="تعديل"><i class="fas fa-edit"></i></button>
                     <button type="button" class="btn-icon btn-icon-danger" onclick="PeriodicInspections.deleteDailySafetyCheckListRecord('${Utils.escapeHTML(r.id)}')" title="حذف"><i class="fas fa-trash"></i></button>
                 </td>
             </tr>
@@ -2910,6 +2985,68 @@ const PeriodicInspections = {
             addBtn.parentNode.replaceChild(newBtn, addBtn);
             newBtn.addEventListener('click', () => this.showDailySafetyCheckListForm(null));
         }
+        const excelBtn = document.getElementById('daily-safety-checklist-export-excel-btn');
+        if (excelBtn) {
+            const excelBtnNew = excelBtn.cloneNode(true);
+            excelBtn.parentNode.replaceChild(excelBtnNew, excelBtn);
+            excelBtnNew.addEventListener('click', () => this.exportDailySafetyCheckListFullExcel());
+        }
+        const pdfBtn = document.getElementById('daily-safety-checklist-export-pdf-btn');
+        if (pdfBtn) {
+            const pdfBtnNew = pdfBtn.cloneNode(true);
+            pdfBtn.parentNode.replaceChild(pdfBtnNew, pdfBtn);
+            pdfBtnNew.addEventListener('click', () => this.exportDailySafetyCheckListFullPDF());
+        }
+    },
+
+    exportDailySafetyCheckListFullExcel() {
+        const records = this.getDailySafetyCheckListRecords();
+        if (!records || records.length === 0) { Notification.warning('لا توجد سجلات لتصديرها'); return; }
+        const fieldToRecordKey = { q16: 'q15Reading', q17: 'q16', q18: 'q17' };
+        const headers = ['رقم التسلسل', 'المصنع/الموقع', 'التاريخ', 'القائم بالمرور', 'الوردية', 'الملاحظات'].concat(this.DAILY_SAFETY_CHECKLIST_QUESTIONS.map((q, i) => `س${i + 1}`));
+        const rows = records.sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt)).map((r) => {
+            const serial = this.getDailySafetyCheckListSerialNumber(r);
+            const base = [serial, Utils.escapeHTML(r.siteName || ''), r.date ? Utils.formatDate(r.date) : '', Utils.escapeHTML(r.inspectorName || ''), Utils.escapeHTML(r.shift || ''), Utils.escapeHTML((r.notes || '').replace(/\r?\n/g, ' '))];
+            const qVals = this.DAILY_SAFETY_CHECKLIST_QUESTIONS.map(q => { const key = fieldToRecordKey[q.key] || q.key; return Utils.escapeHTML(String(r[key] != null ? r[key] : '')); });
+            return base.concat(qVals);
+        });
+        const csvContent = '\uFEFF' + [headers.join('\t'), ...rows.map(row => row.join('\t'))].join('\r\n');
+        const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `DailySafetyCheckList_${new Date().toISOString().slice(0, 10)}.xls`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        Notification.success('تم تصدير السجل إلى Excel بنجاح');
+    },
+
+    exportDailySafetyCheckListFullPDF() {
+        const records = this.getDailySafetyCheckListRecords();
+        if (!records || records.length === 0) { Notification.warning('لا توجد سجلات لتصديرها'); return; }
+        const fieldToRecordKey = { q16: 'q15Reading', q17: 'q16', q18: 'q17' };
+        const fullTableRows = records.sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt)).map(r => {
+            const serial = this.getDailySafetyCheckListSerialNumber(r);
+            const qCells = this.DAILY_SAFETY_CHECKLIST_QUESTIONS.map(q => { const key = fieldToRecordKey[q.key] || q.key; const v = r[key] != null ? String(r[key]) : '-'; return `<td style="padding:4px; border:1px solid #ddd; font-size:10px;">${Utils.escapeHTML(v)}</td>`; }).join('');
+            return `<tr><td style="padding:4px; border:1px solid #ddd;">${Utils.escapeHTML(serial)}</td><td style="padding:4px; border:1px solid #ddd;">${Utils.escapeHTML(r.siteName || '-')}</td><td style="padding:4px; border:1px solid #ddd;">${r.date ? Utils.formatDate(r.date) : '-'}</td><td style="padding:4px; border:1px solid #ddd;">${Utils.escapeHTML(r.inspectorName || '-')}</td><td style="padding:4px; border:1px solid #ddd;">${Utils.escapeHTML(r.shift || '-')}</td>${qCells}</tr>`;
+        }).join('');
+        const qHeaders = this.DAILY_SAFETY_CHECKLIST_QUESTIONS.map((q, i) => `<th style="padding:4px; border:1px solid #ddd; background:#003865; color:#fff; font-size:10px;">س${i + 1}</th>`).join('');
+        const content = `<p style="text-align:center; margin:0 0 12px 0; font-weight:bold;">تصدير كامل لسجل قائمة الفحص اليومي للسلامة (${records.length} سجل)</p><table style="width:100%; border-collapse:collapse; font-size:11px;"><thead><tr style="background:#003865; color:#fff;"><th style="padding:6px; border:1px solid #ddd;">رقم التقرير</th><th style="padding:6px; border:1px solid #ddd;">المصنع/الموقع</th><th style="padding:6px; border:1px solid #ddd;">التاريخ</th><th style="padding:6px; border:1px solid #ddd;">القائم بالمرور</th><th style="padding:6px; border:1px solid #ddd;">الوردية</th>${qHeaders}</tr></thead><tbody>${fullTableRows}</tbody></table>`;
+        const formCode = `DSC-FULL-${new Date().toISOString().slice(0, 10)}`;
+        const formTitle = 'سجل قائمة الفحص اليومي للسلامة - تصدير كامل';
+        const htmlContent = typeof FormHeader !== 'undefined' && FormHeader.generatePDFHTML ? FormHeader.generatePDFHTML(formCode, formTitle, content, false, true, { source: 'DailySafetyCheckList', titleEn: 'Daily Safety Check List', titleAr: 'قائمة الفحص اليومي للسلامة' }, new Date().toISOString(), new Date().toISOString()) : `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>${formTitle}</title></head><body style="font-family:Arial,Tahoma,sans-serif;direction:rtl;padding:20px;">${content}</body></html>`;
+        const blob = new Blob(['\ufeff' + htmlContent], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `DailySafetyCheckList_Full_${new Date().toISOString().slice(0, 10)}.html`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        Notification.success('تم تصدير السجل إلى PDF (HTML). يمكنك فتح الملف وطباعته كـ PDF من المتصفح.');
     },
 
     DAILY_SAFETY_CHECKLIST_QUESTIONS: [
@@ -2943,8 +3080,8 @@ const PeriodicInspections = {
             const isReading = q.key === 'q16';
             const recordKey = fieldToRecordKey[q.key] || q.key;
             const val = record ? (record[recordKey] || '') : '';
-            if (isReading) return `<div class="form-group"><label class="form-label">${idx + 1}- ${Utils.escapeHTML(q.label)}</label><input type="text" id="dsc-${q.key}" class="form-input" value="${Utils.escapeHTML(val)}" placeholder="أدخل القراءة"></div>`;
-            return `<div class="form-group"><label class="form-label">${idx + 1}- ${Utils.escapeHTML(q.label)}</label><select id="dsc-${q.key}" class="form-input">${complianceOptions}</select></div>`;
+            if (isReading) return `<div class="form-group"><label class="form-label required">${idx + 1}- ${Utils.escapeHTML(q.label)}</label><input type="text" id="dsc-${q.key}" class="form-input" value="${Utils.escapeHTML(val)}" placeholder="أدخل القراءة" required></div>`;
+            return `<div class="form-group"><label class="form-label required">${idx + 1}- ${Utils.escapeHTML(q.label)}</label><select id="dsc-${q.key}" class="form-input" required>${complianceOptions}</select></div>`;
         }).join('');
         const siteOptions = '<option value="">اختر المصنع/الموقع</option>' + (sites.map(s => `<option value="${Utils.escapeHTML(s.id)}">${Utils.escapeHTML(s.name)}</option>`).join(''));
         const dateVal = record && record.date ? String(record.date).slice(0, 10) : new Date().toISOString().slice(0, 10);
@@ -2969,6 +3106,7 @@ const PeriodicInspections = {
                 <div class="dsc-modal-header">
                     <button type="button" class="dsc-modal-close" aria-label="إغلاق" onclick="this.closest('.modal-overlay').remove()"><i class="fas fa-times"></i></button>
                     <h2 class="dsc-modal-title"><i class="fas fa-clipboard-check ml-2"></i>${record ? 'تعديل' : 'إضافة'} سجل Daily Safety Check List</h2>
+                    <p class="dsc-form-serial" style="margin: 0.25rem 0 0; font-size: 0.9rem; opacity: 0.95;">${record ? 'رقم التقرير: ' + Utils.escapeHTML(this.getDailySafetyCheckListSerialNumber(record)) : 'رقم التقرير: سيُعيّن تلقائياً عند الحفظ (اليوم-الوردية-الترتيب)'}</p>
                 </div>
                 <div class="dsc-modal-body">
                     <div class="dsc-section">
@@ -3015,7 +3153,188 @@ const PeriodicInspections = {
         modal.querySelector('#dsc-save-btn').addEventListener('click', () => this.saveDailySafetyCheckListRecord(modal, record ? record.id : null));
     },
 
-    async saveDailySafetyCheckListRecord(modalElement, editId) {
+    getDailySafetyCheckListSerialNumber(record) {
+        if (!record) return '00-0-0';
+        const dateStr = (record.date && String(record.date).slice(0, 10)) || '';
+        const day = dateStr.length >= 10 ? String(parseInt(dateStr.slice(8, 10), 10) || 0).padStart(2, '0') : '00';
+        const shiftMap = { 'الأولى': '1', 'الثانية': '2', 'الثالثة': '3' };
+        const sh = shiftMap[record.shift] || '0';
+        const list = this.getDailySafetyCheckListRecords();
+        const sameDayShift = list.filter(r => {
+            const rDate = (r.date && String(r.date).slice(0, 10)) || '';
+            return rDate === dateStr && (shiftMap[r.shift] || '0') === sh;
+        }).sort((a, b) => new Date(a.createdAt || a.id) - new Date(b.createdAt || b.id));
+        const idx = sameDayShift.findIndex(r => r.id === record.id);
+        const no = idx >= 0 ? idx + 1 : sameDayShift.length + 1;
+        return `${day}-${sh}-${no}`;
+    },
+
+    showDailySafetyCheckListView(recordId) {
+        const record = this.getDailySafetyCheckListRecords().find(r => r.id === recordId);
+        if (!record) { Notification.error('السجل غير موجود'); return; }
+        const serialNo = this.getDailySafetyCheckListSerialNumber(record);
+        const fieldToRecordKey = { q16: 'q15Reading', q17: 'q16', q18: 'q17' };
+        const questionsRows = this.DAILY_SAFETY_CHECKLIST_QUESTIONS.map((q, idx) => {
+            const recordKey = fieldToRecordKey[q.key] || q.key;
+            const val = record[recordKey] != null ? String(record[recordKey]).trim() : '-';
+            return `<tr><td style="width:28px; text-align:center; font-weight:bold;">${idx + 1}</td><td style="padding:8px; border:1px solid #e2e8f0;">${Utils.escapeHTML(q.label)}</td><td style="padding:8px; border:1px solid #e2e8f0; min-width:100px;">${Utils.escapeHTML(val)}</td></tr>`;
+        }).join('');
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay dsc-view-modal-overlay';
+        modal.innerHTML = `
+            <style>
+                .dsc-view-modal-overlay .dsc-view-box { max-width: 820px; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); background: #fff; }
+                .dsc-view-modal-overlay .dsc-view-header { text-align: center; padding: 1rem 2rem; border-bottom: 2px solid #e5e7eb; background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%); color: #fff; border-radius: 12px 12px 0 0; }
+                .dsc-view-modal-overlay .dsc-view-header .dsc-view-title { margin: 0; font-size: 1.2rem; font-weight: 700; }
+                .dsc-view-modal-overlay .dsc-view-close { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.2); border: none; color: #fff; width: 36px; height: 36px; border-radius: 8px; cursor: pointer; }
+                .dsc-view-modal-overlay .dsc-view-body { overflow-y: auto; padding: 1rem 1.5rem; flex: 1; }
+                .dsc-view-modal-overlay .dsc-view-section { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+                .dsc-view-modal-overlay .dsc-view-section-title { font-size: 0.95rem; font-weight: 700; color: #1e40af; margin: 0 0 0.5rem; }
+                .dsc-view-modal-overlay .dsc-view-footer { padding: 1rem; border-top: 2px solid #e5e7eb; background: #f8fafc; border-radius: 0 0 12px 12px; display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; }
+                .dsc-view-modal-overlay .dsc-view-footer .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; }
+                .dsc-view-modal-overlay .dsc-view-footer .btn-secondary { background: #e2e8f0; color: #374151; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; }
+                .dsc-view-modal-overlay .dsc-view-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+            </style>
+            <div class="modal-content dsc-view-box">
+                <div class="dsc-view-header" style="position: relative;">
+                    <button type="button" class="dsc-view-close" aria-label="إغلاق" onclick="this.closest('.modal-overlay').remove()"><i class="fas fa-times"></i></button>
+                    <h2 class="dsc-view-title"><i class="fas fa-clipboard-check ml-2"></i>عرض سجل Daily Safety Check List</h2>
+                    <p class="dsc-view-serial" style="margin: 0.25rem 0 0; font-size: 0.95rem; opacity: 0.95;">رقم التقرير: ${Utils.escapeHTML(serialNo)}</p>
+                </div>
+                <div class="dsc-view-body">
+                    <div class="dsc-view-section">
+                        <div class="dsc-view-section-title"><i class="fas fa-info-circle ml-2"></i>البيانات الأساسية</div>
+                        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem;">
+                            <div><span style="color:#64748b;">المصنع/الموقع:</span> ${Utils.escapeHTML(record.siteName || '-')}</div>
+                            <div><span style="color:#64748b;">التاريخ:</span> ${record.date ? Utils.formatDate(record.date) : '-'}</div>
+                            <div><span style="color:#64748b;">القائم بالمرور:</span> ${Utils.escapeHTML(record.inspectorName || '-')}</div>
+                            <div><span style="color:#64748b;">الوردية:</span> ${Utils.escapeHTML(record.shift || '-')}</div>
+                        </div>
+                    </div>
+                    <div class="dsc-view-section">
+                        <div class="dsc-view-section-title"><i class="fas fa-tasks ml-2"></i>بنود الفحص اليومي للسلامة</div>
+                        <table class="dsc-view-table">
+                            <thead><tr><th style="width:28px;">#</th><th>البنود</th><th style="min-width:100px;">الإجابة</th></tr></thead>
+                            <tbody>${questionsRows}</tbody>
+                        </table>
+                    </div>
+                    ${(record.notes || '').trim() ? `<div class="dsc-view-section"><div class="dsc-view-section-title"><i class="fas fa-sticky-note ml-2"></i>الملاحظات</div><p style="margin:0;">${Utils.escapeHTML(record.notes)}</p></div>` : ''}
+                </div>
+                <div class="dsc-view-footer">
+                    <button type="button" class="btn-primary" onclick="PeriodicInspections.printDailySafetyCheckListRecord('${Utils.escapeHTML(record.id)}')"><i class="fas fa-print ml-2"></i>طباعة</button>
+                    <button type="button" class="btn-primary" onclick="PeriodicInspections.exportDailySafetyCheckListRecord('${Utils.escapeHTML(record.id)}')"><i class="fas fa-file-export ml-2"></i>تصدير</button>
+                    <button type="button" class="btn-secondary" onclick="this.closest('.modal-overlay').remove(); PeriodicInspections.showDailySafetyCheckListForm('${Utils.escapeHTML(record.id)}');"><i class="fas fa-edit ml-2"></i>تعديل</button>
+                    <button type="button" class="btn-secondary" style="color:#b91c1c;" onclick="if(confirm('هل أنت متأكد من حذف هذا السجل؟')) { this.closest('.modal-overlay').remove(); PeriodicInspections.deleteDailySafetyCheckListRecord('${Utils.escapeHTML(record.id)}'); }"><i class="fas fa-trash ml-2"></i>حذف</button>
+                    <button type="button" class="btn-secondary" onclick="this.closest('.modal-overlay').remove()"><i class="fas fa-times ml-2"></i>إغلاق</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    },
+
+    getDailySafetyCheckListRecordPrintContent(record) {
+        if (!record) return '';
+        const serialNo = this.getDailySafetyCheckListSerialNumber(record);
+        const fieldToRecordKey = { q16: 'q15Reading', q17: 'q16', q18: 'q17' };
+        const rows = this.DAILY_SAFETY_CHECKLIST_QUESTIONS.map((q, idx) => {
+            const recordKey = fieldToRecordKey[q.key] || q.key;
+            const val = record[recordKey] != null ? String(record[recordKey]).trim() : '-';
+            return `<tr><td style="text-align:center; padding:8px; border:1px solid #ddd;">${idx + 1}</td><td style="padding:8px; border:1px solid #ddd;">${Utils.escapeHTML(q.label)}</td><td style="padding:8px; border:1px solid #ddd;">${Utils.escapeHTML(val)}</td></tr>`;
+        }).join('');
+        return `
+            <p style="text-align: center; margin: 0 0 15px 0; font-weight: bold; font-size: 1rem;">رقم التقرير: ${Utils.escapeHTML(serialNo)}</p>
+            <div class="info-grid" style="display:grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px;">
+                <div class="info-item" style="padding:10px; background:#f8fafc; border-right:3px solid #3b82f6; border-radius:5px;">
+                    <div style="font-weight:bold; color:#64748b; font-size:12px;">المصنع/الموقع</div>
+                    <div style="color:#1e293b; font-size:14px;">${Utils.escapeHTML(record.siteName || '-')}</div>
+                </div>
+                <div class="info-item" style="padding:10px; background:#f8fafc; border-right:3px solid #3b82f6; border-radius:5px;">
+                    <div style="font-weight:bold; color:#64748b; font-size:12px;">التاريخ</div>
+                    <div style="color:#1e293b; font-size:14px;">${record.date ? Utils.formatDate(record.date) : '-'}</div>
+                </div>
+                <div class="info-item" style="padding:10px; background:#f8fafc; border-right:3px solid #3b82f6; border-radius:5px;">
+                    <div style="font-weight:bold; color:#64748b; font-size:12px;">القائم بالمرور</div>
+                    <div style="color:#1e293b; font-size:14px;">${Utils.escapeHTML(record.inspectorName || '-')}</div>
+                </div>
+                <div class="info-item" style="padding:10px; background:#f8fafc; border-right:3px solid #3b82f6; border-radius:5px;">
+                    <div style="font-weight:bold; color:#64748b; font-size:12px;">الوردية</div>
+                    <div style="color:#1e293b; font-size:14px;">${Utils.escapeHTML(record.shift || '-')}</div>
+                </div>
+            </div>
+            <table style="width:100%; border-collapse:collapse; margin-top:15px;">
+                <thead><tr style="background:#3b82f6; color:white;"><th style="width:50px; padding:10px;">#</th><th style="padding:10px; text-align:right;">البنود</th><th style="padding:10px; min-width:100px;">الإجابة</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            ${(record.notes || '').trim() ? `<div style="margin-top:20px; padding:15px; background:#f8fafc; border-radius:5px;"><div style="font-weight:bold; color:#1e40af; margin-bottom:8px;">الملاحظات</div><p style="margin:0; line-height:1.6;">${Utils.escapeHTML(record.notes)}</p></div>` : ''}
+        `;
+    },
+
+    printDailySafetyCheckListRecord(recordId) {
+        const record = this.getDailySafetyCheckListRecords().find(r => r.id === recordId);
+        if (!record) { Notification.error('السجل غير موجود'); return; }
+        const content = this.getDailySafetyCheckListRecordPrintContent(record);
+        const formCode = `DSC-${record.id || ''}-${(record.date || '').toString().slice(0, 10)}`;
+        const formTitle = 'سجل Daily Safety Check List - قائمة الفحص اليومي للسلامة';
+        const htmlContent = typeof FormHeader !== 'undefined' && FormHeader.generatePDFHTML
+            ? FormHeader.generatePDFHTML(formCode, formTitle, content, false, true, { source: 'DailySafetyCheckList', titleEn: 'Daily Safety Check List', titleAr: 'قائمة الفحص اليومي للسلامة' }, record.createdAt || new Date().toISOString(), record.updatedAt || record.createdAt || new Date().toISOString())
+            : `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>${formTitle}</title></head><body style="font-family:Arial,Tahoma,sans-serif;direction:rtl;padding:20px;">${content}</body></html>`;
+        const blob = new Blob(['\ufeff' + htmlContent], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const printWindow = window.open(url, '_blank');
+        if (printWindow) {
+            printWindow.onload = () => { setTimeout(() => { printWindow.print(); setTimeout(() => URL.revokeObjectURL(url), 500); }, 300); };
+        } else {
+            Notification.error('يرجى السماح للنوافذ المنبثقة للطباعة');
+        }
+    },
+
+    exportDailySafetyCheckListRecord(recordId) {
+        const record = this.getDailySafetyCheckListRecords().find(r => r.id === recordId);
+        if (!record) { Notification.error('السجل غير موجود'); return; }
+        const content = this.getDailySafetyCheckListRecordPrintContent(record);
+        const formCode = `DSC-${record.id || ''}-${(record.date || '').toString().slice(0, 10)}`;
+        const formTitle = 'سجل Daily Safety Check List - قائمة الفحص اليومي للسلامة';
+        const htmlContent = typeof FormHeader !== 'undefined' && FormHeader.generatePDFHTML
+            ? FormHeader.generatePDFHTML(formCode, formTitle, content, false, true, { source: 'DailySafetyCheckList', titleEn: 'Daily Safety Check List', titleAr: 'قائمة الفحص اليومي للسلامة' }, record.createdAt || new Date().toISOString(), record.updatedAt || record.createdAt || new Date().toISOString())
+            : `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>${formTitle}</title></head><body style="font-family:Arial,Tahoma,sans-serif;direction:rtl;padding:20px;">${content}</body></html>`;
+        const blob = new Blob(['\ufeff' + htmlContent], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `DailySafetyCheckList_${(record.date || '').toString().slice(0, 10)}_${(record.id || '').replace(/[^a-zA-Z0-9-]/g, '')}.html`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        Notification.success('تم تصدير السجل بنجاح');
+    },
+
+    validateDailySafetyCheckListForm(modalElement) {
+        const siteId = (modalElement.querySelector('#dsc-siteId') || {}).value || '';
+        const date = (modalElement.querySelector('#dsc-date') || {}).value || '';
+        const inspectorName = (modalElement.querySelector('#dsc-inspectorName') || {}).value || '';
+        const shift = (modalElement.querySelector('#dsc-shift') || {}).value || '';
+        if (!siteId || !date || !inspectorName || !shift) {
+            return { valid: false, message: 'يرجى استكمال جميع البيانات الأساسية (المصنع/الموقع، التاريخ، القائم بالمرور، الوردية).' };
+        }
+        const fieldToRecordKey = { q16: 'q15Reading', q17: 'q16', q18: 'q17' };
+        for (const q of this.DAILY_SAFETY_CHECKLIST_QUESTIONS) {
+            const el = modalElement.querySelector('#dsc-' + q.key);
+            const val = el ? (el.value || '').trim() : '';
+            if (!val) {
+                const label = q.key === 'q16' ? 'قراءة الضغط (السؤال 16)' : `السؤال ${this.DAILY_SAFETY_CHECKLIST_QUESTIONS.indexOf(q) + 1}`;
+                return { valid: false, message: `يرجى الإجابة على جميع بنود الفحص. الحقل الناقص: ${label}.` };
+            }
+        }
+        return { valid: true };
+    },
+
+    saveDailySafetyCheckListRecord(modalElement, editId) {
+        const validation = this.validateDailySafetyCheckListForm(modalElement);
+        if (!validation.valid) {
+            if (typeof Notification !== 'undefined' && Notification.error) Notification.error(validation.message || 'يرجى استكمال جميع البيانات والأسئلة قبل الحفظ');
+            return;
+        }
         const siteSelect = modalElement.querySelector('#dsc-siteId');
         const siteId = siteSelect ? siteSelect.value : '';
         const sites = this.getSiteOptions();
@@ -3031,19 +3350,23 @@ const PeriodicInspections = {
         const now = new Date().toISOString();
         if (editId) {
             const idx = list.findIndex(r => r.id === editId);
-            if (idx >= 0) { list[idx] = { ...list[idx], ...payload, updatedAt: now }; Notification.success('تم تحديث السجل بنجاح'); }
+            if (idx >= 0) { list[idx] = { ...list[idx], ...payload, updatedAt: now }; }
         } else {
             const id = 'DSC-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
             list.push({ id, ...payload, createdAt: now, updatedAt: now });
-            Notification.success('تم إضافة السجل بنجاح');
         }
         if (typeof DataManager !== 'undefined' && DataManager.save) DataManager.save();
-        if (typeof GoogleIntegration !== 'undefined' && GoogleIntegration.autoSave) await GoogleIntegration.autoSave('DailySafetyCheckList', list).catch(() => {});
         modalElement.remove();
         if (this.state.currentTab === 'daily-safety-checklist') {
             const contentContainer = document.getElementById('periodic-inspections-content-area');
-            if (contentContainer) contentContainer.innerHTML = await this.renderDailySafetyCheckListContent();
-            this.bindDailySafetyCheckListTableEvents();
+            if (contentContainer) {
+                this.renderDailySafetyCheckListContent().then(html => { contentContainer.innerHTML = html; this.bindDailySafetyCheckListTableEvents(); }).catch(() => {});
+            }
+        }
+        if (editId) Notification.success('تم تحديث السجل بنجاح');
+        else Notification.success('تم إضافة السجل بنجاح');
+        if (typeof GoogleIntegration !== 'undefined' && GoogleIntegration.autoSave) {
+            GoogleIntegration.autoSave('DailySafetyCheckList', list).catch(() => {});
         }
     },
 
