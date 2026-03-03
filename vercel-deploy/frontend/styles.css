@@ -4836,62 +4836,77 @@ body.app-active {
     }
 }
 
-/* شريط تقدم المزامنة في الهيدر عند إخفاء النافذة (نمط شريط بحث) */
-.sync-progress-header-bar {
+/* شريط تقدم المزامنة السفلي فقط - مضغوط ومتناسق */
+.sync-progress-floating-bar {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10002;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     background: #fff;
-    border-radius: 9999px;
-    padding: 8px 14px 8px 16px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    padding: 6px 12px 6px 14px;
+    border-radius: 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.12);
     direction: rtl;
-    border: 1px solid rgba(0,0,0,0.06);
+    border: 1px solid rgba(0,0,0,0.08);
+    font-size: 12px;
+    max-width: calc(100vw - 32px);
+    min-width: 200px;
 }
-.sync-progress-header-placeholder {
-    color: #9ca3af;
-    font-size: 0.9rem;
+.sync-floating-label {
+    color: #6b7280;
     white-space: nowrap;
     flex-shrink: 0;
 }
-.sync-progress-header-track {
+.sync-floating-track {
     flex: 1;
-    min-width: 60px;
-    height: 6px;
+    min-width: 48px;
+    height: 4px;
     background: #e5e7eb;
-    border-radius: 9999px;
+    border-radius: 4px;
     overflow: hidden;
 }
-.sync-progress-header-fill {
+.sync-floating-fill {
     height: 100%;
     background: #3b82f6;
-    border-radius: 9999px;
+    border-radius: 4px;
     transition: width 0.3s ease;
 }
-.sync-progress-header-percent {
+.sync-floating-percent {
     background: #3b82f6;
     color: #fff;
-    font-size: 0.8rem;
+    font-size: 11px;
     font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    flex-shrink: 0;
+    min-width: 24px;
+    text-align: center;
+}
+.sync-floating-btn {
+    background: #3b82f6;
+    color: #fff;
+    border: none;
     padding: 4px 10px;
-    border-radius: 9999px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
     flex-shrink: 0;
 }
-
-/* صندوق تقدم المزامنة العائم - تجنب التداخل على الموبايل */
-#sync-progress-floating {
-    max-width: calc(100vw - 32px);
-    left: 16px !important;
-    right: 16px !important;
-    transform: none !important;
-    margin-left: 0 !important;
+.sync-floating-btn:hover {
+    background: #2563eb;
 }
 @media (max-width: 480px) {
-    #sync-progress-floating {
-        bottom: calc(140px + env(safe-area-inset-bottom)) !important;
-        left: 16px !important;
-        right: auto !important;
-        width: auto !important;
+    .sync-progress-floating-bar {
+        bottom: calc(16px + env(safe-area-inset-bottom));
+        left: 16px;
+        right: 16px;
+        transform: none;
+        width: auto;
     }
 }
 

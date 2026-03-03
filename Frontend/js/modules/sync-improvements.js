@@ -84,15 +84,14 @@
 
         /**
          * إخفاء نافذة التقدم مع استمرار التحميل في الخلفية
-         * عرض شريط التقدم في الهيدر (نمط شريط بحث) كما في التصميم
+         * عرض شريط التقدم في الهيدر السفلي فقط (شريط عائم صغير)
          */
         hideProgressIndicator() {
             const el = document.getElementById('sync-progress-indicator');
             if (!el) return;
             el.style.display = 'none';
             this._progressHidden = true;
-            this._showHeaderProgressBar();
-            this._createFloatingShowButton();
+            this._createFloatingBottomBar();
         },
 
         /**
@@ -104,76 +103,37 @@
                 el.style.display = '';
                 this._progressHidden = false;
             }
-            this._hideHeaderProgressBar();
             this._removeFloatingShowButton();
         },
 
         /**
-         * إظهار شريط التقدم في الهيدر (نمط شريط بحث)
+         * إنشاء الشريط السفلي فقط (شريط تقدم مضغوط + زر إظهار)
          */
-        _showHeaderProgressBar() {
-            const bar = document.getElementById('sync-progress-header-bar');
-            if (bar) bar.style.display = 'flex';
-            this._updateHeaderProgressBar(0, this._totalSheets || 1);
-        },
-
-        _hideHeaderProgressBar() {
-            const bar = document.getElementById('sync-progress-header-bar');
-            if (bar) bar.style.display = 'none';
-        },
-
-        _updateHeaderProgressBar(completed, total) {
-            const percent = total ? Math.round((completed / total) * 100) : 0;
-            const fill = document.getElementById('sync-progress-header-fill');
-            const percentEl = document.getElementById('sync-progress-header-percent');
-            if (fill) fill.style.width = percent + '%';
-            if (percentEl) percentEl.textContent = percent;
-        },
-
-        /**
-         * إنشاء زر عائم لإظهار نافذة التقدم
-         */
-        _createFloatingShowButton() {
+        _createFloatingBottomBar() {
             this._removeFloatingShowButton();
             const floating = document.createElement('div');
             floating.id = 'sync-progress-floating';
-            floating.style.cssText = `
-                position: fixed;
-                bottom: 24px;
-                left: 50%;
-                transform: translateX(-50%);
-                z-index: 10002;
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                background: white;
-                padding: 10px 16px;
-                border-radius: 24px;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-                direction: rtl;
-                font-size: 14px;
-                color: #374151;
+            floating.className = 'sync-progress-floating-bar';
+            floating.setAttribute('role', 'status');
+            floating.setAttribute('aria-live', 'polite');
+            floating.innerHTML = `
+                <span class="sync-floating-label">جاري التحميل</span>
+                <div class="sync-floating-track"><div id="sync-floating-fill" class="sync-floating-fill" style="width: 0%;"></div></div>
+                <span id="sync-floating-percent" class="sync-floating-percent">0</span>
+                <button type="button" id="sync-floating-show-btn" class="sync-floating-btn">إظهار</button>
             `;
-            const progressSpan = document.createElement('span');
-            progressSpan.id = 'sync-progress-floating-text';
-            progressSpan.textContent = 'جاري التحميل... 0 من ' + (this._totalSheets || '?') + ' (0%)';
-            const showBtn = document.createElement('button');
-            showBtn.type = 'button';
-            showBtn.textContent = 'إظهار';
-            showBtn.style.cssText = `
-                background: #3B82F6;
-                color: white;
-                border: none;
-                padding: 6px 14px;
-                border-radius: 8px;
-                font-size: 13px;
-                cursor: pointer;
-                font-family: inherit;
-            `;
-            showBtn.addEventListener('click', () => this.showProgressIndicator());
-            floating.appendChild(progressSpan);
-            floating.appendChild(showBtn);
             document.body.appendChild(floating);
+            const showBtn = document.getElementById('sync-floating-show-btn');
+            if (showBtn) showBtn.addEventListener('click', () => this.showProgressIndicator());
+            this._updateFloatingProgress(0, this._totalSheets || 1);
+        },
+
+        _updateFloatingProgress(completed, total) {
+            const percent = total ? Math.round((completed / total) * 100) : 0;
+            const fill = document.getElementById('sync-floating-fill');
+            const percentEl = document.getElementById('sync-floating-percent');
+            if (fill) fill.style.width = percent + '%';
+            if (percentEl) percentEl.textContent = percent;
         },
 
         _removeFloatingShowButton() {
@@ -192,12 +152,7 @@
             const progressText = document.getElementById('sync-progress-text');
             if (progressBar) progressBar.style.width = `${percent}%`;
             if (progressText) progressText.textContent = `${completed} من ${total} (${percent}%)`;
-            // تحديث شريط التقدم في الهيدر عند إخفاء النافذة
-            if (this._progressHidden) {
-                this._updateHeaderProgressBar(completed, total);
-                const floatingText = document.getElementById('sync-progress-floating-text');
-                if (floatingText) floatingText.textContent = `جاري التحميل... ${completed} من ${total} (${percent}%)`;
-            }
+            if (this._progressHidden) this._updateFloatingProgress(completed, total);
         },
         
         /**
@@ -205,7 +160,6 @@
          */
         removeProgressIndicator() {
             this._progressHidden = false;
-            this._hideHeaderProgressBar();
             this._removeFloatingShowButton();
             const progressIndicator = document.getElementById('sync-progress-indicator');
             if (progressIndicator && progressIndicator.parentNode) {

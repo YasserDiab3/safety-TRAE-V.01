@@ -593,13 +593,34 @@ const PeriodicInspections = {
                 });
                 dataUpdated = true;
                 Utils.safeLog(`✅ تم تحميل ${inspectionResult.data.length} فحص دوري من Google Sheets`);
-            } else {
+} else {
                 // التأكد من وجود مصفوفة فارغة إذا لم يتم تحميل البيانات
                 if (!AppState.appData.periodicInspections) {
                     AppState.appData.periodicInspections = [];
                 }
             }
-            
+
+            // تحميل سجل المرور اليومي للسلامة (Daily Safety Check List) من قاعدة البيانات
+            if (typeof GoogleIntegration !== 'undefined' && GoogleIntegration.readFromSheets) {
+                try {
+                    const dscData = await GoogleIntegration.readFromSheets('DailySafetyCheckList');
+                    if (Array.isArray(dscData)) {
+                        AppState.appData.dailySafetyCheckList = dscData;
+                        dataUpdated = true;
+                        if (dscData.length > 0 && typeof Utils !== 'undefined' && Utils.safeLog) {
+                            Utils.safeLog('✅ تم تحميل سجل المرور اليومي للسلامة: ' + dscData.length + ' سجل');
+                        }
+                    } else if (!AppState.appData.dailySafetyCheckList) {
+                        AppState.appData.dailySafetyCheckList = [];
+                    }
+                } catch (dscError) {
+                    if (typeof Utils !== 'undefined' && Utils.safeWarn) Utils.safeWarn('⚠️ تعذر تحميل سجل المرور اليومي للسلامة:', dscError);
+                    if (!AppState.appData.dailySafetyCheckList) AppState.appData.dailySafetyCheckList = [];
+                }
+            } else if (!AppState.appData.dailySafetyCheckList) {
+                AppState.appData.dailySafetyCheckList = [];
+            }
+
             // تحديث الواجهة دائماً بعد التحميل (حتى لو لم يتم تحديث البيانات)
             // هذا يضمن عدم بقاء الواجهة فارغة
             if (this.state.currentView !== 'form' && this.state.currentView !== 'edit') {
