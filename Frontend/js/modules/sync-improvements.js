@@ -84,12 +84,14 @@
 
         /**
          * إخفاء نافذة التقدم مع استمرار التحميل في الخلفية
+         * عرض شريط التقدم في الهيدر (نمط شريط بحث) كما في التصميم
          */
         hideProgressIndicator() {
             const el = document.getElementById('sync-progress-indicator');
             if (!el) return;
             el.style.display = 'none';
             this._progressHidden = true;
+            this._showHeaderProgressBar();
             this._createFloatingShowButton();
         },
 
@@ -102,7 +104,30 @@
                 el.style.display = '';
                 this._progressHidden = false;
             }
+            this._hideHeaderProgressBar();
             this._removeFloatingShowButton();
+        },
+
+        /**
+         * إظهار شريط التقدم في الهيدر (نمط شريط بحث)
+         */
+        _showHeaderProgressBar() {
+            const bar = document.getElementById('sync-progress-header-bar');
+            if (bar) bar.style.display = 'flex';
+            this._updateHeaderProgressBar(0, this._totalSheets || 1);
+        },
+
+        _hideHeaderProgressBar() {
+            const bar = document.getElementById('sync-progress-header-bar');
+            if (bar) bar.style.display = 'none';
+        },
+
+        _updateHeaderProgressBar(completed, total) {
+            const percent = total ? Math.round((completed / total) * 100) : 0;
+            const fill = document.getElementById('sync-progress-header-fill');
+            const percentEl = document.getElementById('sync-progress-header-percent');
+            if (fill) fill.style.width = percent + '%';
+            if (percentEl) percentEl.textContent = percent;
         },
 
         /**
@@ -167,8 +192,9 @@
             const progressText = document.getElementById('sync-progress-text');
             if (progressBar) progressBar.style.width = `${percent}%`;
             if (progressText) progressText.textContent = `${completed} من ${total} (${percent}%)`;
-            // تحديث النص في الزر العائم عند إخفاء النافذة
+            // تحديث شريط التقدم في الهيدر عند إخفاء النافذة
             if (this._progressHidden) {
+                this._updateHeaderProgressBar(completed, total);
                 const floatingText = document.getElementById('sync-progress-floating-text');
                 if (floatingText) floatingText.textContent = `جاري التحميل... ${completed} من ${total} (${percent}%)`;
             }
@@ -179,6 +205,7 @@
          */
         removeProgressIndicator() {
             this._progressHidden = false;
+            this._hideHeaderProgressBar();
             this._removeFloatingShowButton();
             const progressIndicator = document.getElementById('sync-progress-indicator');
             if (progressIndicator && progressIndicator.parentNode) {

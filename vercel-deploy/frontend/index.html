@@ -5933,6 +5933,12 @@
                         </div>
                     </div>
                     <div style="flex: 1;"></div>
+                    <!-- شريط التقدم عند إخفاء نافذة التحميل (نمط شريط بحث) -->
+                    <div id="sync-progress-header-bar" class="sync-progress-header-bar" style="display: none; min-width: 280px; max-width: 400px; flex: 1; margin-left: 12px; margin-right: 12px;" role="status" aria-live="polite" aria-label="تقدم التحميل">
+                        <span class="sync-progress-header-placeholder">ابحث... او ادخل بيانات</span>
+                        <div class="sync-progress-header-track"><div id="sync-progress-header-fill" class="sync-progress-header-fill" style="width: 0%;"></div></div>
+                        <span id="sync-progress-header-percent" class="sync-progress-header-percent">0</span>
+                    </div>
                     <!-- Header Actions: Theme Toggle & Notifications -->
                     <div class="header-actions" style="display: flex; align-items: center; gap: 10px;">
                         <button id="header-theme-toggle" class="header-theme-toggle" aria-label="تبديل الوضع الليلي"

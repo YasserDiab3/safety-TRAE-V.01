@@ -4707,6 +4707,48 @@ body.app-active {
     }
 }
 
+/* شريط تقدم المزامنة في الهيدر عند إخفاء النافذة (نمط شريط بحث) */
+.sync-progress-header-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #fff;
+    border-radius: 9999px;
+    padding: 8px 14px 8px 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    direction: rtl;
+    border: 1px solid rgba(0,0,0,0.06);
+}
+.sync-progress-header-placeholder {
+    color: #9ca3af;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.sync-progress-header-track {
+    flex: 1;
+    min-width: 60px;
+    height: 6px;
+    background: #e5e7eb;
+    border-radius: 9999px;
+    overflow: hidden;
+}
+.sync-progress-header-fill {
+    height: 100%;
+    background: #3b82f6;
+    border-radius: 9999px;
+    transition: width 0.3s ease;
+}
+.sync-progress-header-percent {
+    background: #3b82f6;
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    flex-shrink: 0;
+}
+
 /* صندوق تقدم المزامنة العائم - تجنب التداخل على الموبايل */
 #sync-progress-floating {
     max-width: calc(100vw - 32px);
