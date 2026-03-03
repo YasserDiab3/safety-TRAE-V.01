@@ -2907,15 +2907,6 @@ const PeriodicInspections = {
         const records = this.getDailySafetyCheckListRecords();
         const stats = this.getDailySafetyCheckListStats(records);
         return `
-            <div class="flex flex-col sm:flex-row gap-3 items-center justify-between mb-4">
-                <h3 class="text-xl font-bold text-gray-800"><i class="fas fa-tasks ml-2"></i>سجل المرور اليومي للسلامة</h3>
-                <div class="flex gap-2 flex-wrap items-center justify-end">
-                    <span class="text-lg font-semibold text-gray-700">Daily Safety Check List</span>
-                    <button type="button" id="daily-safety-checklist-export-excel-btn" class="btn-secondary" title="تصدير السجل كامل إلى Excel"><i class="fas fa-file-excel ml-2"></i>تصدير Excel</button>
-                    <button type="button" id="daily-safety-checklist-export-pdf-btn" class="btn-secondary" title="تصدير السجل كامل إلى PDF"><i class="fas fa-file-pdf ml-2"></i>تصدير PDF</button>
-                    <button type="button" id="daily-safety-checklist-add-btn" class="btn-primary"><i class="fas fa-plus ml-2"></i>إضافة سجل</button>
-                </div>
-            </div>
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div class="content-card bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200">
                     <div class="card-body">
@@ -2968,6 +2959,15 @@ const PeriodicInspections = {
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+            <div class="flex justify-end mb-4" style="direction:rtl;">
+                <div class="flex flex-col sm:flex-row gap-3 items-center flex-wrap">
+                    <h3 class="text-xl font-bold text-gray-800"><i class="fas fa-tasks ml-2"></i>سجل المرور اليومي للسلامة</h3>
+                    <span class="text-lg font-semibold text-gray-700">Daily Safety Check List</span>
+                    <button type="button" id="daily-safety-checklist-export-excel-btn" class="btn-secondary" title="تصدير السجل كامل إلى Excel"><i class="fas fa-file-excel ml-2"></i>تصدير Excel</button>
+                    <button type="button" id="daily-safety-checklist-export-pdf-btn" class="btn-secondary" title="تصدير السجل كامل إلى PDF"><i class="fas fa-file-pdf ml-2"></i>تصدير PDF</button>
+                    <button type="button" id="daily-safety-checklist-add-btn" class="btn-primary"><i class="fas fa-plus ml-2"></i>إضافة سجل</button>
                 </div>
             </div>
             <div class="content-card">
