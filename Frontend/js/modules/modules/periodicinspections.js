@@ -227,7 +227,7 @@ const PeriodicInspections = {
     },
 
     state: {
-        currentTab: 'inspections-list', // inspections-list, inspection-records
+        currentTab: 'inspections-list', // inspections-list, inspection-records, daily-safety-checklist
         filters: {
             category: '',
             result: '',
@@ -389,6 +389,10 @@ const PeriodicInspections = {
                         <i class="fas fa-history ml-2"></i>
                         سجل الفحوصات الدورية
                     </button>
+                    <button class="tab-btn ${this.state.currentTab === 'daily-safety-checklist' ? 'active' : ''}" data-tab="daily-safety-checklist">
+                        <i class="fas fa-tasks ml-2"></i>
+                        Daily Safety Check List
+                    </button>
                 </div>
             </div>
             ` : ''}
@@ -413,14 +417,16 @@ const PeriodicInspections = {
                     setTimeout(async () => {
                         try {
                             let renderContent;
-                            if (currentTab === 'inspection-records') {
+                            if (currentTab === 'daily-safety-checklist') {
+                                renderContent = await this.renderDailySafetyCheckListContent();
+                            } else if (currentTab === 'inspection-records') {
                                 renderContent = await this.renderInspectionRecords();
                             } else {
                                 renderContent = await this.renderList();
                             }
                             
                             if (renderContent) {
-                                const contentContainer = document.querySelector('#periodic-inspections-section .mt-6');
+                                const contentContainer = document.getElementById('periodic-inspections-content-area');
                                 if (contentContainer) {
                                     contentContainer.innerHTML = renderContent;
                                     this.setupEventListeners();
@@ -441,11 +447,21 @@ const PeriodicInspections = {
                 // إعادة تحميل المحتوى بناءً على التبويب الحالي
                 if (this.state.currentView !== 'form' && this.state.currentView !== 'edit') {
                     const currentTab = this.state?.currentTab || 'inspections-list';
-                    if (currentTab === 'inspection-records') {
+                    if (currentTab === 'daily-safety-checklist') {
+                        this.renderDailySafetyCheckListContent().then(content => {
+                            if (content) {
+                                const contentContainer = document.getElementById('periodic-inspections-content-area');
+                                if (contentContainer) {
+                                    contentContainer.innerHTML = content;
+                                    this.setupEventListeners();
+                                }
+                            }
+                        }).catch(() => {});
+                    } else if (currentTab === 'inspection-records') {
                         // تحديث سجل الفحوصات
                         this.renderInspectionRecords().then(content => {
                             if (content) {
-                                const contentContainer = document.querySelector('#periodic-inspections-section .mt-6');
+                                const contentContainer = document.getElementById('periodic-inspections-content-area');
                                 if (contentContainer) {
                                     contentContainer.innerHTML = content;
                                     this.setupEventListeners();
@@ -456,7 +472,7 @@ const PeriodicInspections = {
                         // تحديث قائمة الفحوصات
                         this.renderList().then(content => {
                             if (content) {
-                                const contentContainer = document.querySelector('#periodic-inspections-section .mt-6');
+                                const contentContainer = document.getElementById('periodic-inspections-content-area');
                                 if (contentContainer) {
                                     contentContainer.innerHTML = content;
                                     this.setupEventListeners();
@@ -470,10 +486,20 @@ const PeriodicInspections = {
                 // حتى في حالة الخطأ، تأكد من أن الواجهة معروضة
                 if (this.state.currentView !== 'form' && this.state.currentView !== 'edit') {
                     const currentTab = this.state?.currentTab || 'inspections-list';
-                    if (currentTab === 'inspection-records') {
+                    if (currentTab === 'daily-safety-checklist') {
+                        this.renderDailySafetyCheckListContent().then(content => {
+                            if (content) {
+                                const contentContainer = document.getElementById('periodic-inspections-content-area');
+                                if (contentContainer) {
+                                    contentContainer.innerHTML = content;
+                                    this.setupEventListeners();
+                                }
+                            }
+                        }).catch(() => {});
+                    } else if (currentTab === 'inspection-records') {
                         this.renderInspectionRecords().then(content => {
                             if (content) {
-                                const contentContainer = document.querySelector('#periodic-inspections-section .mt-6');
+                                const contentContainer = document.getElementById('periodic-inspections-content-area');
                                 if (contentContainer) {
                                     contentContainer.innerHTML = content;
                                     this.setupEventListeners();
@@ -483,7 +509,7 @@ const PeriodicInspections = {
                     } else {
                         this.renderList().then(content => {
                             if (content) {
-                                const contentContainer = document.querySelector('#periodic-inspections-section .mt-6');
+                                const contentContainer = document.getElementById('periodic-inspections-content-area');
                                 if (contentContainer) {
                                     contentContainer.innerHTML = content;
                                     this.setupEventListeners();
@@ -577,7 +603,7 @@ const PeriodicInspections = {
             // تحديث الواجهة دائماً بعد التحميل (حتى لو لم يتم تحديث البيانات)
             // هذا يضمن عدم بقاء الواجهة فارغة
             if (this.state.currentView !== 'form' && this.state.currentView !== 'edit') {
-                const contentDiv = document.querySelector('#periodic-inspections-section .mt-6');
+                const contentDiv = document.getElementById('periodic-inspections-content-area');
                 if (contentDiv) {
                     try {
                         // ✅ تحميل المحتوى بشكل آمن مع معالجة الأخطاء
@@ -640,6 +666,9 @@ const PeriodicInspections = {
                 return await this.renderForm();
             case 'list':
             default:
+                if (this.state.currentTab === 'daily-safety-checklist') {
+                    return await this.renderDailySafetyCheckListContent();
+                }
                 if (this.state.currentTab === 'inspection-records') {
                     return await this.renderInspectionRecords();
                 }
@@ -1096,6 +1125,10 @@ const PeriodicInspections = {
         setTimeout(() => {
             // إعداد التبويبات
             this.setupTabsNavigation();
+
+            if (this.state.currentTab === 'daily-safety-checklist') {
+                this.bindDailySafetyCheckListTableEvents();
+            }
 
             const addBtn = document.getElementById('add-periodic-inspection-btn');
             if (addBtn) {
@@ -2808,6 +2841,227 @@ const PeriodicInspections = {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
         Notification.success('تم تصدير الفحص بنجاح');
+    },
+
+    // ========== Daily Safety Check List (قائمة الفحص اليومي للسلامة) ==========
+    getDailySafetyCheckListRecords() {
+        if (!AppState.appData.dailySafetyCheckList) AppState.appData.dailySafetyCheckList = [];
+        return AppState.appData.dailySafetyCheckList;
+    },
+
+    getSafetyTeamMembersForCheckList() {
+        try {
+            const settingsTeam = AppState.companySettings?.safetyTeam || AppState.companySettings?.safetyTeamMembers;
+            if (Array.isArray(settingsTeam) && settingsTeam.length > 0) {
+                return settingsTeam.map(m => (typeof m === 'string' ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m }));
+            }
+            if (typeof GoogleIntegration !== 'undefined' && GoogleIntegration.sendRequest) {
+                return GoogleIntegration.sendRequest({ action: 'getSafetyTeamMembers', data: {} })
+                    .then(result => (result && Array.isArray(result.data) ? result.data.map(m => ({ id: m.id || m.name, name: m.name || m })) : []))
+                    .catch(() => []);
+            }
+            return [];
+        } catch (e) {
+            Utils.safeWarn('⚠️ getSafetyTeamMembersForCheckList:', e);
+            return [];
+        }
+    },
+
+    async renderDailySafetyCheckListContent() {
+        const records = this.getDailySafetyCheckListRecords();
+        return `
+            <div class="flex flex-col sm:flex-row gap-3 items-center justify-between mb-4">
+                <h3 class="text-xl font-bold text-gray-800"><i class="fas fa-tasks ml-2"></i>Daily Safety Check List</h3>
+                <button type="button" id="daily-safety-checklist-add-btn" class="btn-primary"><i class="fas fa-plus ml-2"></i>إضافة سجل</button>
+            </div>
+            <div class="content-card">
+                <div class="card-header"><h2 class="card-title"><i class="fas fa-list ml-2"></i>سجل قائمة الفحص اليومي للسلامة</h2></div>
+                <div class="card-body" id="daily-safety-checklist-table">${this.renderDailySafetyCheckListTable(records)}</div>
+            </div>
+        `;
+    },
+
+    renderDailySafetyCheckListTable(records) {
+        if (!records || records.length === 0) return '<div class="empty-state"><p class="text-gray-500">لا توجد سجلات. اضغط "إضافة سجل" لتسجيل فحص يومي جديد.</p></div>';
+        const rows = records.sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt)).map(r => `
+            <tr>
+                <td>${Utils.escapeHTML(r.siteName || '-')}</td>
+                <td>${r.date ? Utils.formatDate(r.date) : '-'}</td>
+                <td>${Utils.escapeHTML(r.inspectorName || '-')}</td>
+                <td>${Utils.escapeHTML(r.shift || '-')}</td>
+                <td class="text-left">
+                    <button type="button" class="btn-icon btn-icon-primary ml-2" onclick="PeriodicInspections.showDailySafetyCheckListForm('${Utils.escapeHTML(r.id)}')" title="عرض/تعديل"><i class="fas fa-edit"></i></button>
+                    <button type="button" class="btn-icon btn-icon-danger" onclick="PeriodicInspections.deleteDailySafetyCheckListRecord('${Utils.escapeHTML(r.id)}')" title="حذف"><i class="fas fa-trash"></i></button>
+                </td>
+            </tr>
+        `).join('');
+        return `<div class="table-wrapper" style="width:100%; overflow-x:auto;">
+            <table class="data-table table-header-red" style="width:100%;">
+                <thead><tr><th style="min-width:120px;">المصنع/الموقع</th><th style="min-width:100px;">التاريخ</th><th style="min-width:120px;">القائم بالمرور</th><th style="min-width:80px;">الوردية</th><th style="min-width:100px;">الإجراء</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+    },
+
+    bindDailySafetyCheckListTableEvents() {
+        const addBtn = document.getElementById('daily-safety-checklist-add-btn');
+        if (addBtn) {
+            const newBtn = addBtn.cloneNode(true);
+            addBtn.parentNode.replaceChild(newBtn, addBtn);
+            newBtn.addEventListener('click', () => this.showDailySafetyCheckListForm(null));
+        }
+    },
+
+    DAILY_SAFETY_CHECKLIST_QUESTIONS: [
+        { key: 'q1', label: 'تم المرور على غرفة الطلمبات لمياه الحريق وشبكة الإطفاء الأوتوماتيك وحنفيات الحريق وأجهزة الإطفاء اليدوية ومنسوب المياة بخزان الحريق' },
+        { key: 'q2', label: 'المرور على المخازن (عنابر التخزين المبرد والمجمد والتاكد من عدم وجود أي ملاحظة متعلقة بممارسات التخزين)' },
+        { key: 'q3', label: 'المرور على مخزن المواد الأولية والتاكد من اشترطات السلامة بالمخزن' },
+        { key: 'q4', label: 'المرور علي مخزن قطع الغيار والتاكد من مطابقة لاشتراطات السلامة والصحة المهنية' },
+        { key: 'q5', label: 'المرور على نقط شحن بطاريات الفورك ليفت - الترانس بالت' },
+        { key: 'q6', label: 'المرور على رصيف الشحن والتاكد من عدم وجود أي ملاحظات' },
+        { key: 'q7', label: 'المرور على الأسوار الداخلية للمصنع - بوابات الخارجية (ومنطقة انتظار السيرات - الميزان البسكول- وصلة الدفاع المدني الخارجية وعدم وجود اشغالات)' },
+        { key: 'q8', label: 'المرور على غرفة محطة ضواغط الهواء وابراج التبريد الخاص بمحطات الامونيا' },
+        { key: 'q9', label: 'المرور على ورشة الإدارة الصيانة وورشة الحركة والتاكد من عدم وجود أي ملاحظات بالمكان' },
+        { key: 'q10', label: 'المرور على غرف توزيع الكهرباء الرئيسية - غرف المحولات الرئيسية' },
+        { key: 'q11', label: 'المرور على منطقة المخلفات - منطقة تجميع المخلفات' },
+        { key: 'q12', label: 'المرور على صالات الإنتاج والتعبئة والتاكد من توفر اشتراطات السلامة' },
+        { key: 'q13', label: 'المرور على فريق الصيانة الداخلي أو المقاول مع عدم السماح لهم بالعمل بدون استخراج على تصاريح عمل' },
+        { key: 'q14', label: 'المرور على لوحة الإنذار الرئيسية والفرعية بالمصنع وعمل Rest إذا لزم الأمر' },
+        { key: 'q15', label: 'المرور على نظام الإنذار والإطفاء التلقائي لغرف محول الكهرباء والغرف' },
+        { key: 'q16', label: 'المرور على غرفة الطلمبات وقراءة الضغط - وكانت القراءة' },
+        { key: 'q17', label: 'المرور على غرفة تغيير الملابس للعاملين والتاكد من عدم وجود أي ملاحظات غير امنة' },
+        { key: 'q18', label: 'المرور علي منطقة الغلاية وعدم وجود أي ملاحظة' }
+    ],
+
+    showDailySafetyCheckListForm(editId) {
+        const record = editId ? this.getDailySafetyCheckListRecords().find(r => r.id === editId) : null;
+        const sites = this.getSiteOptions();
+        const complianceOptions = '<option value="">اختر</option><option value="مطابق">مطابق</option><option value="غير مطابق">غير مطابق</option>';
+        const shiftOptions = '<option value="">اختر الوردية</option><option value="الأولى">الأولى</option><option value="الثانية">الثانية</option><option value="الثالثة">الثالثة</option>';
+        const fieldToRecordKey = { q16: 'q15Reading', q17: 'q16', q18: 'q17' };
+        const questionsHtml = this.DAILY_SAFETY_CHECKLIST_QUESTIONS.map((q, idx) => {
+            const isReading = q.key === 'q16';
+            const recordKey = fieldToRecordKey[q.key] || q.key;
+            const val = record ? (record[recordKey] || '') : '';
+            if (isReading) return `<div class="form-group"><label class="form-label">${idx + 1}- ${Utils.escapeHTML(q.label)}</label><input type="text" id="dsc-${q.key}" class="form-input" value="${Utils.escapeHTML(val)}" placeholder="أدخل القراءة"></div>`;
+            return `<div class="form-group"><label class="form-label">${idx + 1}- ${Utils.escapeHTML(q.label)}</label><select id="dsc-${q.key}" class="form-input">${complianceOptions}</select></div>`;
+        }).join('');
+        const siteOptions = '<option value="">اختر المصنع/الموقع</option>' + (sites.map(s => `<option value="${Utils.escapeHTML(s.id)}">${Utils.escapeHTML(s.name)}</option>`).join(''));
+        const dateVal = record && record.date ? String(record.date).slice(0, 10) : new Date().toISOString().slice(0, 10);
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay dsc-modal-overlay';
+        modal.innerHTML = `
+            <style>
+                .dsc-modal-overlay .dsc-modal-box { max-width: 780px; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); background: #fff; }
+                .dsc-modal-overlay .dsc-modal-header { text-align: center; padding: 1.25rem 3rem 1rem; position: relative; border-bottom: 2px solid #e5e7eb; background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%); color: #fff; border-radius: 12px 12px 0 0; }
+                .dsc-modal-overlay .dsc-modal-header .dsc-modal-title { margin: 0; font-size: 1.25rem; font-weight: 700; }
+                .dsc-modal-overlay .dsc-modal-close { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.2); border: none; color: #fff; width: 36px; height: 36px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+                .dsc-modal-overlay .dsc-modal-close:hover { background: rgba(255,255,255,0.35); }
+                .dsc-modal-overlay .dsc-modal-body { overflow-y: auto; padding: 1.25rem; flex: 1; }
+                .dsc-modal-overlay .dsc-section { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+                .dsc-modal-overlay .dsc-section-title { font-size: 0.95rem; font-weight: 700; color: #1e40af; margin: 0 0 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #93c5fd; display: flex; align-items: center; gap: 0.5rem; }
+                .dsc-modal-overlay .dsc-section-title i { color: #2563eb; }
+                .dsc-modal-overlay .dsc-modal-footer { padding: 1rem 1.25rem; border-top: 2px solid #e5e7eb; background: #f8fafc; border-radius: 0 0 12px 12px; display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap; }
+                .dsc-modal-overlay .dsc-modal-footer .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none; padding: 0.6rem 1.5rem; border-radius: 8px; font-weight: 600; }
+                .dsc-modal-overlay .dsc-modal-footer .btn-secondary { background: #e2e8f0; color: #374151; border: none; padding: 0.6rem 1.5rem; border-radius: 8px; font-weight: 600; }
+            </style>
+            <div class="modal-content dsc-modal-box">
+                <div class="dsc-modal-header">
+                    <button type="button" class="dsc-modal-close" aria-label="إغلاق" onclick="this.closest('.modal-overlay').remove()"><i class="fas fa-times"></i></button>
+                    <h2 class="dsc-modal-title"><i class="fas fa-clipboard-check ml-2"></i>${record ? 'تعديل' : 'إضافة'} سجل Daily Safety Check List</h2>
+                </div>
+                <div class="dsc-modal-body">
+                    <div class="dsc-section">
+                        <h3 class="dsc-section-title"><i class="fas fa-info-circle"></i>البيانات الأساسية</h3>
+                        <div class="form-grid form-grid-2">
+                            <div class="form-group"><label class="form-label required">المصنع/الموقع</label><select id="dsc-siteId" class="form-input" required>${siteOptions}</select></div>
+                            <div class="form-group"><label class="form-label required">التاريخ</label><input type="date" id="dsc-date" class="form-input" required value="${dateVal}"></div>
+                            <div class="form-group"><label class="form-label required">القائم بالمرور</label><select id="dsc-inspectorName" class="form-input" required><option value="">جاري التحميل...</option></select></div>
+                            <div class="form-group"><label class="form-label required">الوردية</label><select id="dsc-shift" class="form-input" required>${shiftOptions}</select></div>
+                        </div>
+                    </div>
+                    <div class="dsc-section">
+                        <h3 class="dsc-section-title"><i class="fas fa-tasks"></i>بنود الفحص اليومي للسلامة</h3>
+                        <div class="space-y-3" style="max-height: 42vh; overflow-y: auto;">${questionsHtml}</div>
+                    </div>
+                    <div class="dsc-section">
+                        <h3 class="dsc-section-title"><i class="fas fa-sticky-note"></i>الملاحظات</h3>
+                        <textarea id="dsc-notes" class="form-input form-textarea" rows="3" placeholder="الملاحظات الموجودة أثناء المرور...">${record ? Utils.escapeHTML(record.notes || '') : ''}</textarea>
+                    </div>
+                </div>
+                <div class="dsc-modal-footer">
+                    <button type="button" class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">إلغاء</button>
+                    <button type="button" id="dsc-save-btn" class="btn-primary"><i class="fas fa-save ml-2"></i>حفظ</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        const siteSelect = modal.querySelector('#dsc-siteId');
+        const inspectorSelect = modal.querySelector('#dsc-inspectorName');
+        if (record) {
+            siteSelect.value = record.siteId || '';
+            modal.querySelector('#dsc-shift').value = record.shift || '';
+            this.DAILY_SAFETY_CHECKLIST_QUESTIONS.forEach(q => {
+                const el = modal.querySelector('#dsc-' + q.key);
+                const recordKey = (fieldToRecordKey[q.key] || q.key);
+                if (el) el.value = record[recordKey] || '';
+            });
+        }
+        const fillInspectorAndRecord = (members) => {
+            inspectorSelect.innerHTML = '<option value="">اختر القائم بالمرور</option>' + (members.map(m => `<option value="${Utils.escapeHTML(m.name)}">${Utils.escapeHTML(m.name)}</option>`).join(''));
+            if (record && record.inspectorName) inspectorSelect.value = record.inspectorName;
+        };
+        Promise.resolve(this.getSafetyTeamMembersForCheckList()).then(members => { const arr = Array.isArray(members) ? members : []; fillInspectorAndRecord(arr); }).catch(() => fillInspectorAndRecord([]));
+        modal.querySelector('#dsc-save-btn').addEventListener('click', () => this.saveDailySafetyCheckListRecord(modal, record ? record.id : null));
+    },
+
+    async saveDailySafetyCheckListRecord(modalElement, editId) {
+        const siteSelect = modalElement.querySelector('#dsc-siteId');
+        const siteId = siteSelect ? siteSelect.value : '';
+        const sites = this.getSiteOptions();
+        const siteName = (sites.find(s => s.id === siteId) || {}).name || '';
+        const date = modalElement.querySelector('#dsc-date')?.value || '';
+        const inspectorName = modalElement.querySelector('#dsc-inspectorName')?.value || '';
+        const shift = modalElement.querySelector('#dsc-shift')?.value || '';
+        const notes = modalElement.querySelector('#dsc-notes')?.value || '';
+        const payload = { siteId, siteName, date, inspectorName, shift, notes,
+            q1: modalElement.querySelector('#dsc-q1')?.value || '', q2: modalElement.querySelector('#dsc-q2')?.value || '', q3: modalElement.querySelector('#dsc-q3')?.value || '', q4: modalElement.querySelector('#dsc-q4')?.value || '', q5: modalElement.querySelector('#dsc-q5')?.value || '', q6: modalElement.querySelector('#dsc-q6')?.value || '', q7: modalElement.querySelector('#dsc-q7')?.value || '', q8: modalElement.querySelector('#dsc-q8')?.value || '', q9: modalElement.querySelector('#dsc-q9')?.value || '', q10: modalElement.querySelector('#dsc-q10')?.value || '', q11: modalElement.querySelector('#dsc-q11')?.value || '', q12: modalElement.querySelector('#dsc-q12')?.value || '', q13: modalElement.querySelector('#dsc-q13')?.value || '', q14: modalElement.querySelector('#dsc-q14')?.value || '', q15: modalElement.querySelector('#dsc-q15')?.value || '', q15Reading: modalElement.querySelector('#dsc-q16')?.value || '', q16: modalElement.querySelector('#dsc-q17')?.value || '', q17: modalElement.querySelector('#dsc-q18')?.value || '' };
+        this.getDailySafetyCheckListRecords();
+        const list = AppState.appData.dailySafetyCheckList;
+        const now = new Date().toISOString();
+        if (editId) {
+            const idx = list.findIndex(r => r.id === editId);
+            if (idx >= 0) { list[idx] = { ...list[idx], ...payload, updatedAt: now }; Notification.success('تم تحديث السجل بنجاح'); }
+        } else {
+            const id = 'DSC-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+            list.push({ id, ...payload, createdAt: now, updatedAt: now });
+            Notification.success('تم إضافة السجل بنجاح');
+        }
+        if (typeof DataManager !== 'undefined' && DataManager.save) DataManager.save();
+        if (typeof GoogleIntegration !== 'undefined' && GoogleIntegration.autoSave) await GoogleIntegration.autoSave('DailySafetyCheckList', list).catch(() => {});
+        modalElement.remove();
+        if (this.state.currentTab === 'daily-safety-checklist') {
+            const contentContainer = document.getElementById('periodic-inspections-content-area');
+            if (contentContainer) contentContainer.innerHTML = await this.renderDailySafetyCheckListContent();
+            this.bindDailySafetyCheckListTableEvents();
+        }
+    },
+
+    async deleteDailySafetyCheckListRecord(id) {
+        if (!confirm('هل أنت متأكد من حذف هذا السجل؟')) return;
+        this.getDailySafetyCheckListRecords();
+        const list = AppState.appData.dailySafetyCheckList;
+        const idx = list.findIndex(r => r.id === id);
+        if (idx === -1) { Notification.error('لم يتم العثور على السجل'); return; }
+        list.splice(idx, 1);
+        if (typeof DataManager !== 'undefined' && DataManager.save) DataManager.save();
+        if (typeof GoogleIntegration !== 'undefined' && GoogleIntegration.autoSave) await GoogleIntegration.autoSave('DailySafetyCheckList', list).catch(() => {});
+        Notification.success('تم حذف السجل');
+        if (this.state.currentTab === 'daily-safety-checklist') {
+            const contentContainer = document.getElementById('periodic-inspections-content-area');
+            if (contentContainer) contentContainer.innerHTML = await this.renderDailySafetyCheckListContent();
+            this.bindDailySafetyCheckListTableEvents();
+        }
     },
 
     setupTabsNavigation() {
