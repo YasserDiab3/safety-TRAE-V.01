@@ -1,0 +1,40 @@
+---
+description: عند أي تحديث على الكود، تطبيق التعديل نفسه على النسخة الأساسية ومجلد vercel-deploy
+globs: 
+  - "Frontend/**"
+  - "Backend/**"
+alwaysApply: true
+---
+
+# مزامنة التحديثات مع vercel-deploy
+
+عند تنفيذ **أي تعديل** على ملفات المشروع (إصلاح، ميزة جديدة، أو تغيير في المنطق أو الواجهة):
+
+## 1. النسخة الأساسية (الأولوية الأولى)
+
+- التعديل يتم **دائماً** على الملفات في المسارات الأصلية:
+  - **الواجهة:** `Frontend/` (مثال: `Frontend/js/modules/modules/fireequipment.js`)
+  - **الخلفية:** `Backend/` (مثال: `Backend/Headers.gs`, `Backend/Config.gs`)
+
+## 2. نسخة النشر (vercel-deploy) — مزامنة إلزامية
+
+بعد تطبيق التعديل على النسخة الأساسية، **يجب** تطبيق **نفس التعديل** على الملف المقابل في مجلد النشر:
+
+| النسخة الأساسية     | المقابل في vercel-deploy      |
+|---------------------|--------------------------------|
+| `Frontend/...`      | `vercel-deploy/frontend/...`   |
+| `Backend/...`       | `vercel-deploy/backend/...`   |
+
+**أمثلة:**
+- تعديل `Frontend/js/modules/modules/fireequipment.js` → تعديل أو نسخ المحتوى إلى `vercel-deploy/frontend/js/modules/modules/fireequipment.js`
+- تعديل `Frontend/js/modules/services/google-integration.js` → نفس التعديل في `vercel-deploy/frontend/js/modules/services/google-integration.js`
+- تعديل `Backend/Headers.gs` → نفس التعديل في `vercel-deploy/backend/Headers.gs`
+- تعديل `Backend/Config.gs` → نفس التعديل في `vercel-deploy/backend/Config.gs`
+
+## 3. قواعد التطبيق
+
+1. **لا تعدّل فقط النسخة الأساسية** — بعد كل تغيير في `Frontend/` أو `Backend/`، نفّذ التعديل المماثل في `vercel-deploy/frontend/` أو `vercel-deploy/backend/` للملف نفسه.
+2. **إذا كان الملف غير موجود في vercel-deploy** (ملف جديد)، أنشئه في المسار المقابل تحت `vercel-deploy/frontend/` أو `vercel-deploy/backend/`.
+3. **الهدف:** أن تبقى النسخة المنشورة على Vercel مطابقة للنسخة الأساسية بعد كل تحديث.
+
+لا ترفع على GitHub تلقائياً؛ اتبع قاعدة «رفع التحديثات على GitHub» (السؤال قبل الرفع).

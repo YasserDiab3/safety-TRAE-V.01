@@ -3353,6 +3353,8 @@ function getModulePrefix(moduleName) {
         'ChemicalSafety': 'CHS',
         'dailyobservations': 'DOB',
         'DailyObservations': 'DOB',
+        'dailysafetychecklist': 'DSC',
+        'DailySafetyCheckList': 'DSC',
         'observationsites': 'OBS',
         'ObservationSites': 'OBS',
         

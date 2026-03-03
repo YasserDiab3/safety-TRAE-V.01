@@ -36,7 +36,7 @@ const DataManager = {
         const heavyKeys = [
             'training', 'trainingSessions', 'trainingCertificates', 'trainingAttendance',
             'contractorTrainings', 'violations', 'blacklistRegister', 'incidents',
-            'dailyObservations', 'ptwRegistry', 'trainingAnalysisData',
+            'dailyObservations', 'dailySafetyCheckList', 'ptwRegistry', 'trainingAnalysisData',
             'contractorEvaluations', 'contractorApprovalRequests', 'contractorDeletionRequests',
             'annualTrainingPlans' // قد يكون كبيراً
         ];

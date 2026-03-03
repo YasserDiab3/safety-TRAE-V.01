@@ -17,8 +17,8 @@
 
 ## ✅ التحقق من الرفع (Git)
 
-- **آخر مزامنة:** تم نسخ التحديثات من Frontend إلى vercel-deploy/frontend (إصلاح الشاشة البيضاء عند إعادة التحميل، رابط التخطي، إخفاء الستار، عرض القائمة على الموبايل، تبويبات المدولات، تقرير UI/UX).
-- **الملفات المرفوعة في مجلد النشر:** `index.html`, `styles.css`, `styles-optimized.css`, `js/modules/app-ui.js`, `js/app-bootstrap.js`, `UI-UX-COMPATIBILITY-REPORT.md`
+- **آخر مزامنة:** تم التحقق من تطابق جميع الملفات المطلوبة بين Frontend و vercel-deploy/frontend (إصلاح الشاشة البيضاء، تسريع استعادة الجلسة خلال أقل من 2 ثانية، رابط التخطي، إخفاء الستار، عرض القائمة على الموبايل، تبويبات المدولات، تقرير UI/UX).
+- **الملفات المرفوعة في مجلد النشر:** `index.html`, `styles.css`, `styles-optimized.css`, `js/modules/app-ui.js`, `js/app-bootstrap.js`, `UI-UX-COMPATIBILITY-REPORT.md` — **بدون تكرار** (كل ملف مرة واحدة).
 
 التحديثات **موجودة في مجلد النشر** `vercel-deploy/frontend` المخصّص لـ Vercel.
 
