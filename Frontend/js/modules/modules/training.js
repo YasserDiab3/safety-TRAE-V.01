@@ -2641,6 +2641,11 @@ const Training = {
                     this.refreshContractorTrainingList();
                 }
             } else if (tabName === 'attendance') {
+                // ضمان تحميل سجل الحضور من الخادم إذا كانت القائمة فارغة (تجنب عرض "لا توجد سجلات" قبل اكتمال التحميل)
+                const attendance = AppState.appData.trainingAttendance || [];
+                if (attendance.length === 0) {
+                    await this.loadTrainingDataAsync().catch(() => {});
+                }
                 this.loadAttendanceRegistry();
                 const attendanceMonthFilter = document.getElementById('attendance-month-filter');
                 const resetAttendanceFilter = document.getElementById('reset-attendance-filter');
@@ -9940,6 +9945,10 @@ const Training = {
                     <div class="flex items-center justify-between">
                         <h2 class="card-title"><i class="fas fa-clipboard-check ml-2"></i>سجل التدريب للموظفين</h2>
                         <div class="flex items-center gap-2">
+                            <button id="attendance-registry-add-record" class="btn-primary">
+                                <i class="fas fa-plus ml-2"></i>
+                                إضافة سجل
+                            </button>
                             <button id="attendance-registry-import-excel" class="btn-secondary">
                                 <i class="fas fa-file-import ml-2"></i>
                                 استيراد Excel
@@ -10097,6 +10106,12 @@ const Training = {
         const filterFactory = document.getElementById('attendance-registry-filter-factory');
         if (filterFactory) {
             filterFactory.onchange = () => this.loadAttendanceRegistry();
+        }
+        
+        // إضافة سجل جديد
+        const addRecordBtn = document.getElementById('attendance-registry-add-record');
+        if (addRecordBtn) {
+            addRecordBtn.onclick = () => this.showAddAttendanceRecordModal();
         }
         
         // استيراد Excel
@@ -10998,6 +11013,162 @@ const Training = {
                 Loading.hide();
                 Utils.safeError('خطأ في حفظ بيانات التحليل:', error);
                 Notification.error('فشل حفظ بيانات التحليل: ' + (error.message || 'خطأ غير معروف'));
+            }
+        });
+    },
+    
+    /**
+     * عرض نافذة إضافة سجل تدريب جديد (سجل الحضور)
+     */
+    showAddAttendanceRecordModal() {
+        this.ensureData();
+        if (!Array.isArray(AppState.appData.trainingAttendance)) {
+            AppState.appData.trainingAttendance = [];
+        }
+        const today = new Date().toISOString().split('T')[0];
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 800px;">
+                <div class="modal-header">
+                    <h2 class="modal-title"><i class="fas fa-plus ml-2"></i>إضافة سجل تدريب</h2>
+                    <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">التاريخ *</label>
+                            <input type="date" id="add-attendance-date" class="form-input" required value="${today}">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">نوع التدريب *</label>
+                            <select id="add-attendance-type" class="form-input" required>
+                                <option value="داخلي" selected>داخلي</option>
+                                <option value="خارجي">خارجي</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">المصنع</label>
+                            <input type="text" id="add-attendance-factory" class="form-input" placeholder="المصنع">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">كود الموظف *</label>
+                            <input type="text" id="add-attendance-code" class="form-input" required placeholder="كود الموظف">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">اسم الموظف *</label>
+                            <input type="text" id="add-attendance-name" class="form-input" required placeholder="اسم الموظف">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">الوظيفة</label>
+                            <input type="text" id="add-attendance-position" class="form-input" placeholder="الوظيفة">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">الإدارة</label>
+                            <input type="text" id="add-attendance-department" class="form-input" placeholder="الإدارة">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">موضوع المحاضرة *</label>
+                            <input type="text" id="add-attendance-topic" class="form-input" required placeholder="موضوع المحاضرة">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">اسم المحاضر</label>
+                            <input type="text" id="add-attendance-trainer" class="form-input" placeholder="اسم المحاضر">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">وقت البدء</label>
+                            <input type="time" id="add-attendance-start-time" class="form-input" value="09:00">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">وقت الانتهاء</label>
+                            <input type="time" id="add-attendance-end-time" class="form-input" value="10:00">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">إجمالي ساعات التدريب</label>
+                            <input type="number" id="add-attendance-hours" class="form-input" step="0.01" value="1">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">إلغاء</button>
+                    <button id="save-add-attendance-btn" class="btn-primary">
+                        <i class="fas fa-save ml-2"></i>حفظ السجل
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) modal.remove();
+        });
+        
+        const startTimeInput = modal.querySelector('#add-attendance-start-time');
+        const endTimeInput = modal.querySelector('#add-attendance-end-time');
+        const hoursInput = modal.querySelector('#add-attendance-hours');
+        const calculateHours = () => {
+            if (startTimeInput?.value && endTimeInput?.value) {
+                const hours = this.calculateTrainingHours(startTimeInput.value, endTimeInput.value);
+                if (hours && parseFloat(hours) > 0) hoursInput.value = hours;
+            }
+        };
+        startTimeInput?.addEventListener('change', calculateHours);
+        endTimeInput?.addEventListener('change', calculateHours);
+        
+        modal.querySelector('#save-add-attendance-btn')?.addEventListener('click', async () => {
+            try {
+                const dateValue = modal.querySelector('#add-attendance-date')?.value;
+                const code = modal.querySelector('#add-attendance-code')?.value?.trim();
+                const name = modal.querySelector('#add-attendance-name')?.value?.trim();
+                const topic = modal.querySelector('#add-attendance-topic')?.value?.trim();
+                if (!dateValue || !code || !name || !topic) {
+                    Notification.warning('يرجى إدخال جميع الحقول المطلوبة (التاريخ، كود الموظف، اسم الموظف، موضوع المحاضرة)');
+                    return;
+                }
+                Loading.show('جاري حفظ السجل...');
+                const factoryVal = modal.querySelector('#add-attendance-factory')?.value?.trim() || '';
+                const startTime = this.cleanTime(modal.querySelector('#add-attendance-start-time')?.value || '');
+                const endTime = this.cleanTime(modal.querySelector('#add-attendance-end-time')?.value || '');
+                const totalHours = modal.querySelector('#add-attendance-hours')?.value ||
+                    this.calculateTrainingHours(startTime, endTime) || '0';
+                const record = {
+                    id: Utils.generateId('ATT'),
+                    trainingId: null,
+                    date: new Date(dateValue).toISOString(),
+                    trainingType: modal.querySelector('#add-attendance-type')?.value || 'داخلي',
+                    factory: factoryVal,
+                    factoryName: factoryVal,
+                    employeeCode: code,
+                    employeeName: name,
+                    position: modal.querySelector('#add-attendance-position')?.value?.trim() || '',
+                    department: modal.querySelector('#add-attendance-department')?.value?.trim() || '',
+                    topic: topic,
+                    trainer: modal.querySelector('#add-attendance-trainer')?.value?.trim() || '',
+                    startTime: startTime,
+                    endTime: endTime,
+                    totalHours: totalHours,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+                AppState.appData.trainingAttendance.push(record);
+                if (typeof window.DataManager !== 'undefined' && window.DataManager.save) {
+                    await window.DataManager.save();
+                }
+                if (typeof GoogleIntegration !== 'undefined' && GoogleIntegration.autoSave) {
+                    await GoogleIntegration.autoSave('TrainingAttendance', AppState.appData.trainingAttendance).catch(err => {
+                        Utils.safeWarn('⚠️ فشل حفظ سجل التدريب في Google Sheets:', err);
+                    });
+                }
+                Loading.hide();
+                modal.remove();
+                Notification.success('تم إضافة السجل بنجاح');
+                this.loadAttendanceRegistry();
+            } catch (error) {
+                Loading.hide();
+                Utils.safeError('خطأ في إضافة السجل:', error);
+                Notification.error('فشل إضافة السجل: ' + (error?.message || 'خطأ غير معروف'));
             }
         });
     },

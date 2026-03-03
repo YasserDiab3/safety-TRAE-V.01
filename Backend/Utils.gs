@@ -580,6 +580,11 @@ function getHeaders(sheetName, data) {
         return getDefaultHeaders('PTWRegistry');
     }
     
+    // ✅ سجل حضور التدريب للموظفين: ترتيب أعمدة ثابت
+    if (sheetName === 'TrainingAttendance') {
+        return getDefaultHeaders('TrainingAttendance');
+    }
+    
     // للأوراق الأخرى، نستخدم الرؤوس الديناميكية أو الافتراضية
     const dynamicHeaders = extractHeadersFromData(data);
     if (dynamicHeaders && dynamicHeaders.length > 0) {
