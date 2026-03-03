@@ -2962,14 +2962,16 @@ const PeriodicInspections = {
                     </div>
                 </div>
             </div>
-            <!-- شريط العنوان والأزرار أسفل الكروت محاذاة لليسار -->
-            <div class="flex justify-end mb-4" style="direction:rtl;">
-                <div class="flex flex-col sm:flex-row gap-3 items-center flex-wrap">
-                    <h3 class="text-xl font-bold text-gray-800"><i class="fas fa-tasks ml-2"></i>سجل المرور اليومي للسلامة</h3>
-                    <span class="text-lg font-semibold text-gray-700">Daily Safety Check List</span>
-                    <button type="button" id="daily-safety-checklist-export-excel-btn" class="btn-secondary" title="تصدير السجل كامل إلى Excel"><i class="fas fa-file-excel ml-2"></i>تصدير Excel</button>
-                    <button type="button" id="daily-safety-checklist-export-pdf-btn" class="btn-secondary" title="تصدير السجل كامل إلى PDF"><i class="fas fa-file-pdf ml-2"></i>تصدير PDF</button>
-                    <button type="button" id="daily-safety-checklist-add-btn" class="btn-primary"><i class="fas fa-plus ml-2"></i>إضافة سجل</button>
+            <!-- شريط العنوان والأزرار أسفل الكروت - بنفس شكل الصورة (عنوان + عنوان فرعي ثم أزرار محاذاة لليمين) -->
+            <div class="mb-4" style="direction:rtl; text-align:right;">
+                <div class="flex flex-col items-end gap-2 mb-3">
+                    <h3 class="text-xl font-bold text-gray-900 m-0" style="display:flex; align-items:center; gap:0.5rem;"><i class="fas fa-tasks" style="color:#1e40af;"></i>سجل المرور اليومي للسلامة</h3>
+                    <p class="text-sm font-medium text-gray-500 m-0">Daily Safety Check List</p>
+                </div>
+                <div class="flex flex-row gap-2 flex-wrap" style="justify-content:flex-end;">
+                    <button type="button" id="daily-safety-checklist-add-btn" class="btn-primary" style="background:linear-gradient(180deg, #3b82f6 0%, #2563eb 100%); border:none; color:#fff; padding:0.5rem 1rem; border-radius:8px; font-weight:600;"><i class="fas fa-plus ml-2"></i>إضافة سجل</button>
+                    <button type="button" id="daily-safety-checklist-export-pdf-btn" class="btn-secondary" title="تصدير السجل كامل إلى PDF" style="background:#fff; border:1px solid #d1d5db; color:#374151;"><i class="fas fa-file-pdf ml-2"></i>تصدير PDF</button>
+                    <button type="button" id="daily-safety-checklist-export-excel-btn" class="btn-secondary" title="تصدير السجل كامل إلى Excel" style="background:#fff; border:1px solid #d1d5db; color:#374151;"><i class="fas fa-file-excel ml-2"></i>تصدير Excel</button>
                 </div>
             </div>
             <div class="content-card">
