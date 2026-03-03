@@ -401,6 +401,20 @@ const Employees = {
     },
 
     /**
+     * تحديد إذا كان الموظف غير نشط (مستقيل)
+     * يدعم: status = 'inactive' أو 'غير نشط' أو وجود تاريخ استقالة
+     */
+    isEmployeeInactive(employee) {
+        if (!employee) return false;
+        const status = (employee.status != null && employee.status !== '') ? String(employee.status).trim() : '';
+        const resignationDate = (employee.resignationDate != null && employee.resignationDate !== '') ? String(employee.resignationDate).trim() : '';
+        if (resignationDate) return true;
+        if (status === 'inactive' || status.toLowerCase() === 'inactive') return true;
+        if (status === 'غير نشط') return true;
+        return false;
+    },
+
+    /**
      * حساب الإحصائيات للموظفين
      */
     calculateStatistics() {
@@ -416,8 +430,9 @@ const Employees = {
             };
         }
 
-        // حساب عدد الموظفين
-        const total = employees.length;
+        // حساب عدد الموظفين (النشطين فقط - لا يشمل المستقيلين أو من تم إلغاء تفعيلهم)
+        const activeEmployees = employees.filter(e => !this.isEmployeeInactive(e));
+        const total = activeEmployees.length;
 
         // حساب متوسط السن
         let totalAge = 0;
@@ -541,10 +556,8 @@ const Employees = {
         
         const averageExperience = experienceCount > 0 ? (totalExperience / experienceCount).toFixed(1) : 0;
 
-        // ✅ حساب عدد الموظفين غير النشطين (المستقيلين)
-        const inactiveCount = employees.filter(e => 
-            e.status === 'inactive'
-        ).length;
+        // ✅ حساب عدد الموظفين غير النشطين (المستقيلين) - يدعم inactive / غير نشط / تاريخ استقالة
+        const inactiveCount = employees.filter(e => this.isEmployeeInactive(e)).length;
 
         return {
             total,

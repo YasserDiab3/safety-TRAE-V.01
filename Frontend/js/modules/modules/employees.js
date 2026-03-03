@@ -431,8 +431,9 @@ const Employees = {
             };
         }
 
-        // حساب عدد الموظفين
-        const total = employees.length;
+        // حساب عدد الموظفين (النشطين فقط - لا يشمل المستقيلين أو من تم إلغاء تفعيلهم)
+        const activeEmployees = employees.filter(e => !this.isEmployeeInactive(e));
+        const total = activeEmployees.length;
 
         // حساب متوسط السن
         let totalAge = 0;
