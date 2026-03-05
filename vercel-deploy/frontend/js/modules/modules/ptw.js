@@ -8136,6 +8136,9 @@ const PTW = {
                         <div class="ptw-filter-field">
                             <label class="ptw-filter-label" style="text-align: right;"><i class="fas fa-calendar-check ml-1"></i>إلى تاريخ</label>
                             <input type="date" id="ptw-filter-date-to" class="ptw-filter-input" style="direction: rtl;">
+                            <div class="text-xs text-gray-600 mt-1">
+                                عدد التصاريح في الفلتر: <span id="ptw-filter-count">-</span>
+                            </div>
                         </div>
                         <div class="ptw-filter-field">
                             <button id="ptw-reset-filters" class="ptw-filter-reset-btn" type="button"><i class="fas fa-redo ml-1"></i>إعادة التعيين</button>
@@ -11970,6 +11973,12 @@ const PTW = {
                 `;
                 }).join('');
         }
+
+        const countEl = document.getElementById('ptw-filter-count');
+        if (countEl) {
+            countEl.textContent = String(filtered.length);
+        }
+
         // تحديث KPIs بعد التصفية
         this.updateKPIs();
     },
@@ -12080,7 +12089,16 @@ const PTW = {
                 <!-- فلتر التحليل -->
                 <div class="content-card border-2 border-indigo-100 bg-indigo-50/30">
                     <div class="card-body">
-                        <h3 class="text-lg font-semibold text-gray-800 mb-4"><i class="fas fa-filter ml-2"></i>فلتر التحليل</h3>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                            <i class="fas fa-filter ml-2"></i>
+                            فلتر التحليل
+                            <span id="ptw-analysis-current-count-badge" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700 border border-indigo-200">
+                                إجمالي التصاريح في التحليل: <span id="ptw-analysis-current-count" class="ml-1">${totalPermits}</span>
+                            </span>
+                        </h3>
+                        <p id="ptw-analysis-summary" class="text-xs text-gray-600 mb-3">
+                            لا يوجد أي فلتر مطبق حالياً، يتم عرض تحليل لجميع التصاريح المسجلة (${totalPermits} تصريحاً).
+                        </p>
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">من تاريخ</label>
@@ -12419,6 +12437,40 @@ const PTW = {
         setEl('ptw-kpi-pending', pendingPermits);
         setEl('ptw-kpi-rejected', rejectedPermits);
         setEl('ptw-kpi-formulas', 'نسبة الإغلاق = ' + closureRate + '% | المفتوحة = ' + openRate + '% | المرفوضة = ' + rejectedRate + '%');
+
+        const countBadge = document.getElementById('ptw-analysis-current-count');
+        if (countBadge) {
+            countBadge.textContent = String(total);
+        }
+
+        const summaryEl = document.getElementById('ptw-analysis-summary');
+        if (summaryEl) {
+            if (total === 0) {
+                summaryEl.textContent = 'لا توجد تصاريح مطابقة لمعايير الفلتر الحالية. جرّب توسيع الفترة أو إزالة بعض الفلاتر للحصول على بيانات للتحليل.';
+            } else {
+                const parts = [];
+                const fromVal = document.getElementById('ptw-analysis-date-from')?.value || '';
+                const toVal = document.getElementById('ptw-analysis-date-to')?.value || '';
+                const wtVal = document.getElementById('ptw-analysis-work-type')?.value || '';
+                const authVal = document.getElementById('ptw-analysis-authorized')?.value || '';
+                const reqVal = document.getElementById('ptw-analysis-requesting')?.value || '';
+                const stVal = document.getElementById('ptw-analysis-status')?.value || '';
+
+                if (fromVal || toVal) {
+                    const rangeText = (fromVal && toVal)
+                        ? ('من ' + fromVal + ' إلى ' + toVal)
+                        : (fromVal ? ('من ' + fromVal) : ('حتى ' + toVal));
+                    parts.push('الفترة: ' + rangeText);
+                }
+                if (wtVal) parts.push('نوع التصريح: ' + wtVal);
+                if (authVal) parts.push('الجهة المصرح لها: ' + authVal);
+                if (reqVal) parts.push('الجهة الطالبة: ' + reqVal);
+                if (stVal) parts.push('الحالة: ' + stVal);
+
+                const filterText = parts.length ? parts.join(' | ') : 'بدون فلاتر (جميع التصاريح)';
+                summaryEl.textContent = 'عدد التصاريح في الفلتر الحالي: ' + total + ' — ' + filterText;
+            }
+        }
 
         if (typeof Chart === 'undefined') return;
         const chartIds = ['ptw-chart-work-type', 'ptw-chart-authorized', 'ptw-chart-status', 'ptw-chart-timeline'];
