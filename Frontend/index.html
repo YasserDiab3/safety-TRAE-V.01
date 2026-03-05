@@ -5708,6 +5708,53 @@
         })();
     </script>
 
+    <!-- حماية إضافية من الشاشة البيضاء بعد إعادة التحميل أو فشل التهيئة -->
+    <script>
+        (function () {
+            function ensureVisible() {
+                try {
+                    var login = document.getElementById('login-screen');
+                    var app = document.getElementById('main-app');
+
+                    if (!login && !app) return;
+
+                    var loginVisible = login && window.getComputedStyle(login).display !== 'none' && login.offsetHeight > 0;
+                    var appVisible = app && window.getComputedStyle(app).display !== 'none' && app.offsetHeight > 0;
+
+                    // إذا كانت كل من شاشة الدخول والتطبيق الرئيسي مخفية، نعيد إظهار واجهة مناسبة
+                    if (!loginVisible && !appVisible) {
+                        var hasSession = false;
+                        try {
+                            hasSession = !!(sessionStorage.getItem('hse_current_session') || localStorage.getItem('hse_remember_user'));
+                        } catch (e) {}
+
+                        // في حالة وجود جلسة محفوظة نُظهر التطبيق مباشرة، وإلا نُظهر شاشة الدخول
+                        if (hasSession && app) {
+                            document.body.classList.add('app-active');
+                            app.style.display = 'flex';
+                        } else if (login) {
+                            login.style.display = 'flex';
+                        }
+                    }
+                } catch (e) {
+                    // نتجاهل أي أخطاء في منطق الحماية نفسه
+                }
+            }
+
+            if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                setTimeout(ensureVisible, 1500);
+            } else {
+                document.addEventListener('DOMContentLoaded', function () {
+                    setTimeout(ensureVisible, 1500);
+                });
+            }
+
+            window.addEventListener('load', function () {
+                setTimeout(ensureVisible, 2000);
+            });
+        })();
+    </script>
+
     <!-- Main Application: يبقى مخفياً حتى يعرضه showMainApp() بعد تطبيق صلاحيات القائمة الجانبية (updateNavigation) -->
     <div id="main-app" class="main-app" style="display: none;">
         <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
