@@ -2663,9 +2663,11 @@ window.UI = {
         this.initUserConnectionStatus();
 
         // تحميل البيانات تلقائياً من قاعدة البيانات مباشرة بعد تسجيل الدخول حسب صلاحيات المستخدم
+        // ⚠️ لا يتم تشغيل هذا المنطق عند مجرد إعادة تحميل الصفحة (isPageRefresh)
         try {
             if (typeof AppState !== 'undefined' &&
                 AppState.currentUser &&
+                !AppState.isPageRefresh &&
                 !AppState._autoSyncStarted &&
                 typeof GoogleIntegration !== 'undefined' &&
                 typeof GoogleIntegration.syncData === 'function' &&
