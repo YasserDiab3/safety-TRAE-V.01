@@ -1994,6 +1994,12 @@ const Dashboard = {
             const totalIncidentsCount = (registryData && registryData.length > 0)
                 ? registryData.length
                 : incidents.length;
+            const allIncidentRecords = (registryData && registryData.length > 0) ? registryData : incidents;
+            const currentYear = new Date().getFullYear();
+            const totalIncidentsThisYear = allIncidentRecords.filter(r => {
+                const d = r && (r.incidentDate || r.date || r.createdAt);
+                return d && new Date(d).getFullYear() === currentYear;
+            }).length;
             const activeUsersCount = users.filter(u => u && u.active !== false).length;
 
             const openPTWCount = ptw.filter(p => {
@@ -2047,6 +2053,11 @@ const Dashboard = {
                     if (totalIncidentsEl) {
                         totalIncidentsEl.textContent = self.formatNumber(totalIncidentsCount);
                         self.applyEnglishNumberFormat(totalIncidentsEl);
+                    }
+                    const totalIncidentsThisYearEl = document.getElementById('total-incidents-this-year');
+                    if (totalIncidentsThisYearEl) {
+                        totalIncidentsThisYearEl.textContent = self.formatNumber(totalIncidentsThisYear);
+                        self.applyEnglishNumberFormat(totalIncidentsThisYearEl);
                     }
                     const activeUsersEl = document.getElementById('active-users');
                     if (activeUsersEl) {
