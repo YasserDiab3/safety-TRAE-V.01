@@ -1699,6 +1699,9 @@ const PTW = {
                                 <i class="fas fa-calendar ml-2"></i>إلى تاريخ
                             </label>
                             <input type="date" id="registry-filter-date-to" class="form-input">
+                            <div id="registry-filter-count-wrapper" class="text-xs text-gray-600 mt-1">
+                                عدد التصاريح في الفترة: <span id="registry-filter-count">-</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -5681,6 +5684,7 @@ const PTW = {
         const dateToFilter = document.getElementById('registry-filter-date-to')?.value || '';
 
         const rows = document.querySelectorAll('[data-registry-id]');
+        let visibleCount = 0;
         rows.forEach(row => {
             let show = true;
             const rowText = row.textContent.toLowerCase();
@@ -5701,7 +5705,15 @@ const PTW = {
             }
 
             row.style.display = show ? '' : 'none';
+            if (show) {
+                visibleCount += 1;
+            }
         });
+
+        const countEl = document.getElementById('registry-filter-count');
+        if (countEl) {
+            countEl.textContent = String(visibleCount);
+        }
     },
 
     /**
