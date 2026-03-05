@@ -2,23 +2,11 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * سكربت لتحديث رقم إصدار التطبيق في جميع الملفات ذات الصلة.
+ * نسخة مطابقة تقريباً من سكربت Frontend/update-version.js
+ * للاستخدام في سياقات النشر داخل vercel-deploy عند الحاجة.
  *
- * الاستخدام اليدوي (تحديد الإصدار بنفسك):
- *   node update-version.js 1.0.3
- *
- * الاستخدام الآلي (زيادة رقم الـ patch تلقائياً من version.json):
- *   node update-version.js auto
- *   أو بدون معاملات: node update-version.js
- *
- * سيتم تحديث:
- * - Frontend/package.json               → الحقل "version"
- * - Frontend/version.json               → الحقل "version"
- * - vercel-deploy/frontend/version.json → الحقل "version"
- * - Frontend/js/modules/app-utils.js    → AppState.appVersion
- * - vercel-deploy/frontend/js/modules/app-utils.js → AppState.appVersion
- * - Backend/VERSION_INFO.txt            → سطر "الإصدار: X"
- * - vercel-deploy/backend/VERSION_INFO.txt → سطر "الإصدار: X"
+ * ملاحظة: يتم حساب جذر المشروع هنا بالرجوع مستويين لأعلى
+ * لأن الملف يقع داخل vercel-deploy/frontend/.
  */
 
 function updateJsonVersion(filePath, newVersion) {
@@ -117,7 +105,8 @@ function resolveVersion(root) {
 }
 
 function main() {
-    const root = path.resolve(__dirname, '..');
+    // هذا الملف موجود داخل vercel-deploy/frontend/ → نحتاج الرجوع مستويين إلى جذر المشروع
+    const root = path.resolve(__dirname, '..', '..');
     const newVersion = resolveVersion(root);
 
     console.log(`🚀 بدء تحديث رقم الإصدار إلى: ${newVersion}`);
