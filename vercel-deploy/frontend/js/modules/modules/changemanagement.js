@@ -221,6 +221,29 @@ const ChangeManagement = {
         `;
     },
 
+    /** إرجاع رقم الطلب للعرض بصيغة MOC-XX فقط */
+    getDisplayRequestNumber(req) {
+        if (!req) return '';
+        const rawId = (req.requestNumber || req.id || '').toString();
+        if (!rawId) return '';
+
+        // إذا كان المعرف على صيغة CRQ_رقم نحوله إلى MOC-رقم برقمين
+        const crqMatch = /^CRQ_(\d+)$/.exec(rawId);
+        if (crqMatch && crqMatch[1]) {
+            const n = parseInt(crqMatch[1], 10);
+            const padded = isNaN(n) ? crqMatch[1] : String(n).padStart(2, '0');
+            return 'MOC-' + padded;
+        }
+
+        // إذا كان الحقل نفسه MOC-XX نستخدمه كما هو
+        if (rawId.indexOf('MOC-') === 0) {
+            return rawId;
+        }
+
+        // في باقي الحالات نعرض المعرف كما هو بدون CRQ مدموج
+        return rawId;
+    },
+
     renderRequestCard(req, safe) {
         if (!safe) safe = (v) => String(v || '');
         const id = safe(req.id);
@@ -248,7 +271,7 @@ const ChangeManagement = {
                 <div class="flex items-start justify-between">
                     <div class="flex-1">
                         <div class="flex items-center gap-2 mb-2 flex-wrap">
-                            <span class="text-sm text-gray-500">${safe(req.requestNumber || req.id)}</span>
+                            <span class="text-sm text-gray-500">${safe(this.getDisplayRequestNumber(req) || (req.requestNumber || req.id || ''))}</span>
                             <h3 class="font-semibold text-lg">${title}</h3>
                             <span class="px-2 py-1 rounded text-xs font-medium ${statusColors[req.status] || 'bg-gray-100'}">${this.getStatusLabel(req.status)}</span>
                             <span class="px-2 py-1 rounded text-xs font-medium ${priorityColors[req.priority] || 'bg-gray-100'}">${this.getPriorityLabel(req.priority)}</span>
@@ -881,22 +904,39 @@ const ChangeManagement = {
     async showRequestDetail(requestId) {
         const overlay = document.querySelector('.modal-overlay');
         if (overlay) return;
-        if (typeof Loading !== 'undefined' && Loading.show) Loading.show('جاري تحميل التفاصيل...');
-        try {
-            const response = await GoogleIntegration.sendRequest({
-                action: 'getChangeRequest',
-                data: { requestId: requestId }
-            });
-            if (typeof Loading !== 'undefined' && Loading.hide) Loading.hide();
-            if (!response || !response.success || !response.data) {
-                if (typeof Notification !== 'undefined' && Notification.error) Notification.error('طلب التغيير غير موجود');
+
+        // محاولة استخدام البيانات المخزنة محلياً أولاً لتسريع الفتح
+        let req = null;
+        if (Array.isArray(this.state.lastRequests) && this.state.lastRequests.length) {
+            req = this.state.lastRequests.find(r => String(r.id) === String(requestId));
+        }
+
+        // إذا لم نجدها أو أردنا أحدث نسخة من Google Sheets، نستدعي السيرفر
+        if (!req) {
+            if (typeof Loading !== 'undefined' && Loading.show) Loading.show('جاري تحميل التفاصيل...');
+            try {
+                const response = await GoogleIntegration.sendRequest({
+                    action: 'getChangeRequest',
+                    data: { requestId: requestId }
+                });
+                if (typeof Loading !== 'undefined' && Loading.hide) Loading.hide();
+                if (!response || !response.success || !response.data) {
+                    if (typeof Notification !== 'undefined' && Notification.error) Notification.error('طلب التغيير غير موجود');
+                    return;
+                }
+                req = response.data;
+            } catch (err) {
+                if (typeof Loading !== 'undefined' && Loading.hide) Loading.hide();
+                if (typeof Utils !== 'undefined' && Utils.safeError) Utils.safeError('showRequestDetail:', err);
+                if (typeof Notification !== 'undefined' && Notification.error) Notification.error('حدث خطأ في تحميل التفاصيل');
                 return;
             }
-            const req = response.data;
-            this.state.currentRequest = req;
+        }
 
-            const safe = (v) => (typeof Utils !== 'undefined' && Utils.escapeHTML) ? Utils.escapeHTML(String(v || '')) : String(v || '');
-            const canApprove = typeof Permissions !== 'undefined' && Permissions.hasAccess && Permissions.hasAccess('change-management');
+        this.state.currentRequest = req;
+
+        const safe = (v) => (typeof Utils !== 'undefined' && Utils.escapeHTML) ? Utils.escapeHTML(String(v || '')) : String(v || '');
+        const canApprove = typeof Permissions !== 'undefined' && Permissions.hasAccess && Permissions.hasAccess('change-management');
             const isDraft = req.status === 'Draft';
             const isInReview = req.status === 'In Review';
             const isApproved = req.status === 'Approved';
@@ -905,31 +945,33 @@ const ChangeManagement = {
             const isCompleted = req.status === 'Completed';
             const isClosed = req.status === 'Closed';
 
-            let timeLogHTML = '';
-            try {
-                const log = req.timeLog;
-                const arr = Array.isArray(log) ? log : (typeof log === 'string' && log ? JSON.parse(log) : []);
-                if (arr.length) {
-                    timeLogHTML = arr.slice().reverse().map(entry => `
+        let timeLogHTML = '';
+        try {
+            const log = req.timeLog;
+            const arr = Array.isArray(log) ? log : (typeof log === 'string' && log ? JSON.parse(log) : []);
+            if (arr.length) {
+                timeLogHTML = arr.slice().reverse().map(entry => `
                         <div class="border-b border-gray-100 pb-2 mb-2 last:border-0">
                             <span class="text-sm font-medium">${safe(entry.action || '')}</span>
                             <span class="text-gray-500 text-sm"> — ${safe(entry.user || '')} — ${this.formatDate(entry.timestamp)}</span>
                             ${entry.note ? `<p class="text-sm text-gray-600 mt-1">${safe(entry.note)}</p>` : ''}
                         </div>
                     `).join('');
-                } else {
-                    timeLogHTML = '<p class="text-gray-500 text-sm">لا يوجد سجل</p>';
-                }
-            } catch (e) {
+            } else {
                 timeLogHTML = '<p class="text-gray-500 text-sm">لا يوجد سجل</p>';
             }
+        } catch (e) {
+            timeLogHTML = '<p class="text-gray-500 text-sm">لا يوجد سجل</p>';
+        }
 
-            const modal = document.createElement('div');
-            modal.className = 'modal-overlay';
-            modal.innerHTML = `
+        const displayNumber = this.getDisplayRequestNumber(req) || (req.requestNumber || req.id || '');
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
                 <div class="modal-content" style="max-width: 900px;">
                     <div class="modal-header">
-                        <h2 class="modal-title">${safe(req.requestNumber || req.id)} — ${safe(req.title)}</h2>
+                        <h2 class="modal-title">${safe(displayNumber)} — ${safe(req.title)}</h2>
                         <button type="button" onclick="this.closest('.modal-overlay').remove()" class="modal-close"><i class="fas fa-times"></i></button>
                     </div>
                     <div class="modal-body">
@@ -953,6 +995,9 @@ const ChangeManagement = {
                             <div class="bg-gray-50 p-3 rounded max-h-48 overflow-y-auto">${timeLogHTML}</div>
                         </div>
                         <div class="flex flex-wrap gap-2 mt-4">
+                            <button type="button" onclick="ChangeManagement.exportSingleRequestToPDF('${safe(req.id)}');" class="btn-secondary">
+                                <i class="fas fa-file-pdf ml-1"></i> تصدير تقرير الطلب
+                            </button>
                             ${isDraft && canApprove ? `<button type="button" onclick="ChangeManagement.updateRequestStatus('${safe(req.id)}','In Review'); this.closest('.modal-overlay').remove();" class="btn-primary"><i class="fas fa-paper-plane ml-2"></i> إرسال للمراجعة</button>` : ''}
                             ${isInReview && canApprove ? `
                                 <button type="button" onclick="ChangeManagement.updateRequestStatus('${safe(req.id)}','Approved'); this.closest('.modal-overlay').remove();" class="btn-primary"><i class="fas fa-check ml-2"></i> موافقة</button>
@@ -966,12 +1011,7 @@ const ChangeManagement = {
                     </div>
                 </div>
             `;
-            document.body.appendChild(modal);
-        } catch (err) {
-            if (typeof Loading !== 'undefined' && Loading.hide) Loading.hide();
-            if (typeof Utils !== 'undefined' && Utils.safeError) Utils.safeError('showRequestDetail:', err);
-            if (typeof Notification !== 'undefined' && Notification.error) Notification.error('حدث خطأ في تحميل التفاصيل');
-        }
+        document.body.appendChild(modal);
     },
 
     async updateRequestStatus(requestId, status) {
@@ -1164,8 +1204,10 @@ const ChangeManagement = {
             const desc = r.description || '';
             const adminSub = r.administrativeChangeSubType ? (r.administrativeChangeSubType === 'AssignmentRequest' ? 'طلب تكليف' : r.administrativeChangeSubType === 'TransferTechnicians' ? 'نقل للفنيين' : 'أخرى') : '';
             const techSub = r.technicalChangeSubType ? (r.technicalChangeSubType === 'ProductionProcess' ? 'عملية إنتاجية' : 'عملية غير إنتاجية') : '';
+            const displayNumber = this.getDisplayRequestNumber(r);
             return {
-                'رقم الطلب': r.requestNumber || r.id,
+                'رقم الطلب (MOC)': displayNumber || r.requestNumber || r.id,
+                'رقم النظام (CRQ)': r.id || '',
                 'التاريخ': this.formatDate(r.requestedAt || r.createdAt),
                 'الموضوع': r.title || '—',
                 'نوع التغيير': this.getChangeTypeLabel(r.changeType),
@@ -1363,6 +1405,260 @@ ${data.map(r => '<tr>' + (Object.keys(data[0] || {})).map(k => '<td>' + safe(r[k
         }
     },
 
+    /**
+     * تصدير تقرير مفصل لطلب تغيير واحد إلى PDF بنفس تصميم نماذج النظام
+     */
+    async exportSingleRequestToPDF(requestId) {
+        try {
+            const list = Array.isArray(this.state.lastRequests) ? this.state.lastRequests : [];
+            let req = list.find(r => String(r.id) === String(requestId));
+
+            // إذا لم يكن موجوداً في الذاكرة، نحاول جلبه من Google Apps Script
+            if (!req && typeof GoogleIntegration !== 'undefined' && GoogleIntegration.sendRequest) {
+                if (typeof Loading !== 'undefined' && Loading.show) Loading.show('جاري تحميل بيانات الطلب...');
+                const response = await GoogleIntegration.sendRequest({
+                    action: 'getChangeRequest',
+                    data: { requestId }
+                });
+                if (typeof Loading !== 'undefined' && Loading.hide) Loading.hide();
+                if (response && response.success && response.data) {
+                    req = response.data;
+                } else {
+                    if (typeof Notification !== 'undefined' && Notification.error) Notification.error('تعذر تحميل بيانات الطلب للتصدير');
+                    return;
+                }
+            }
+
+            if (!req) {
+                if (typeof Notification !== 'undefined' && Notification.warning) Notification.warning('لا توجد بيانات الطلب للتصدير');
+                return;
+            }
+
+            const safe = (v) => (typeof Utils !== 'undefined' && Utils.escapeHTML)
+                ? Utils.escapeHTML(String(v || ''))
+                : String(v || '');
+
+            const displayNumber = this.getDisplayRequestNumber(req) || (req.requestNumber || req.id || '');
+            const formCode = `MOC-${safe(req.id || '')}`;
+            const formTitle = 'طلب إدارة التغيرات - نموذج مقترح تغيير';
+
+            const changeTypeLabel = this.getChangeTypeLabel(req.changeType);
+            const priorityLabel = this.getPriorityLabel(req.priority);
+            const impactLabel = this.getImpactLabel(req.impact);
+
+            const requestedAt = this.formatDate(req.requestedAt || req.createdAt);
+            const dueDate = this.formatDate(req.dueDate);
+
+            const continuity = req.changeContinuity === 'Permanent'
+                ? 'دائم'
+                : req.changeContinuity === 'Temporary'
+                    ? `مؤقت حتى ${this.formatDate(req.temporaryUntilDate)}`
+                    : 'غير محدد';
+
+            const sectionRow = (label, value) => `
+                <tr>
+                    <td style="border:1px solid #e5e7eb;padding:8px 10px;background:#f9fafb;font-weight:600;width:28%;">${label}</td>
+                    <td style="border:1px solid #e5e7eb;padding:8px 10px;">${safe(value || '—')}</td>
+                </tr>
+            `;
+
+            let documentsHtml = '';
+            try {
+                let docs = req.documentsToAmendJson;
+                if (typeof docs === 'string' && docs) {
+                    docs = JSON.parse(docs);
+                }
+                if (Array.isArray(docs) && docs.length) {
+                    documentsHtml = `
+                        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:11px;">
+                            <thead>
+                                <tr>
+                                    <th style="border:1px solid #e5e7eb;padding:6px 8px;background:#f3f4f6;">نوع الوثيقة</th>
+                                    <th style="border:1px solid #e5e7eb;padding:6px 8px;background:#f3f4f6;">اسم الوثيقة</th>
+                                    <th style="border:1px solid #e5e7eb;padding:6px 8px;background:#f3f4f6;">الكود</th>
+                                    <th style="border:1px solid #e5e7eb;padding:6px 8px;background:#f3f4f6;">المسئول</th>
+                                    <th style="border:1px solid #e5e7eb;padding:6px 8px;background:#f3f4f6;">تاريخ مخطط</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${docs.map(d => `
+                                    <tr>
+                                        <td style="border:1px solid #e5e7eb;padding:6px 8px;">${safe(d.documentType)}</td>
+                                        <td style="border:1px solid #e5e7eb;padding:6px 8px;">${safe(d.documentName)}</td>
+                                        <td style="border:1px solid #e5e7eb;padding:6px 8px;">${safe(d.documentCode)}</td>
+                                        <td style="border:1px solid #e5e7eb;padding:6px 8px;">${safe(d.responsibleForAmendment)}</td>
+                                        <td style="border:1px solid #e5e7eb;padding:6px 8px;">${safe(this.formatDate(d.plannedAmendmentDate))}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                }
+            } catch (e) {
+                documentsHtml = '';
+            }
+
+            let trainingHtml = '';
+            try {
+                let training = req.trainingRequirementsJson;
+                if (typeof training === 'string' && training) {
+                    training = JSON.parse(training);
+                }
+                if (Array.isArray(training) && training.length) {
+                    trainingHtml = `
+                        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:11px;">
+                            <thead>
+                                <tr>
+                                    <th style="border:1px solid #e5e7eb;padding:6px 8px;background:#f3f4f6;">المتطلب</th>
+                                    <th style="border:1px solid #e5e7eb;padding:6px 8px;background:#f3f4f6;">تاريخ مخطط</th>
+                                    <th style="border:1px solid #e5e7eb;padding:6px 8px;background:#f3f4f6;">مسئول التنفيذ</th>
+                                    <th style="border:1px solid #e5e7eb;padding:6px 8px;background:#f3f4f6;">تاريخ التنفيذ</th>
+                                    <th style="border:1px solid #e5e7eb;padding:6px 8px;background:#f3f4f6;">ملاحظات</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${training.map(t => `
+                                    <tr>
+                                        <td style="border:1px solid #e5e7eb;padding:6px 8px;">${safe(t.requirement)}</td>
+                                        <td style="border:1px solid #e5e7eb;padding:6px 8px;">${safe(this.formatDate(t.plannedDate))}</td>
+                                        <td style="border:1px solid #e5e7eb;padding:6px 8px;">${safe(t.responsible)}</td>
+                                        <td style="border:1px solid #e5e7eb;padding:6px 8px;">${safe(this.formatDate(t.executionDate))}</td>
+                                        <td style="border:1px solid #e5e7eb;padding:6px 8px;">${safe(t.notes)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                }
+            } catch (e) {
+                trainingHtml = '';
+            }
+
+            const content = `
+                <div style="margin-bottom:18px;">
+                    <h2 style="text-align:center;color:#111827;margin:0 0 6px;font-size:18px;">نموذج مقترح تغيير (فني / إداري)</h2>
+                    <p style="text-align:center;color:#4b5563;margin:0;font-size:12px;">رقم الطلب: ${safe(displayNumber)}</p>
+                </div>
+
+                <table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12px;">
+                    ${sectionRow('رقم النظام (CRQ)', req.id)}
+                    ${sectionRow('التاريخ', requestedAt)}
+                    ${sectionRow('من / إدارة', req.fromDepartment)}
+                    ${sectionRow('إلى / إدارة (موقع التغيير)', req.toDepartment)}
+                    ${sectionRow('المصنع', req.factoryName)}
+                    ${sectionRow('الموقع الفرعي', req.subLocationName)}
+                    ${sectionRow('موقع آخر', req.locationOther)}
+                    ${sectionRow('نوع التغيير', changeTypeLabel)}
+                    ${sectionRow('أولوية التغيير', priorityLabel)}
+                    ${sectionRow('الأثر', impactLabel)}
+                    ${sectionRow('استمرارية التغيير', continuity)}
+                    ${sectionRow('تاريخ مستهدف للتنفيذ', dueDate)}
+                    ${sectionRow('مقدم الطلب', req.requestedBy)}
+                </table>
+
+                <div style="margin-top:16px;margin-bottom:10px;font-weight:700;color:#111827;">وصف التغيير المقترح</div>
+                <div style="border:1px solid #e5e7eb;padding:10px 12px;border-radius:6px;min-height:60px;font-size:12px;">${safe(req.description || '')}</div>
+
+                ${req.attachedDocumentsText ? `
+                    <div style="margin-top:16px;margin-bottom:10px;font-weight:700;color:#111827;">المستندات المرفقة</div>
+                    <div style="border:1px solid #e5e7eb;padding:10px 12px;border-radius:6px;min-height:40px;font-size:12px;">${safe(req.attachedDocumentsText)}</div>
+                ` : ''}
+
+                ${(req.requestingDepartment || req.otherDepartments || req.affectedDepartments) ? `
+                    <div style="margin-top:18px;margin-bottom:10px;font-weight:700;color:#111827;">لجنة إدارة التغيرات</div>
+                    <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:12px;">
+                        ${req.requestingDepartment ? sectionRow('الإدارة / القسم الطالب للتغيير', req.requestingDepartment) : ''}
+                        ${req.otherDepartments ? sectionRow('إدارات / أقسام أخرى', req.otherDepartments) : ''}
+                        ${req.affectedDepartments ? sectionRow('الإدارات أو الأقسام المتأثرة', req.affectedDepartments) : ''}
+                    </table>
+                ` : ''}
+
+                ${(req.employeeCode || req.employeeName || req.adminChangeLocation) ? `
+                    <div style="margin-top:18px;margin-bottom:10px;font-weight:700;color:#111827;">بيانات الموظف (للتغييرات الإدارية)</div>
+                    <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:12px;">
+                        ${req.employeeCode ? sectionRow('الكود الوظيفي', req.employeeCode) : ''}
+                        ${req.employeeName ? sectionRow('اسم الموظف', req.employeeName) : ''}
+                        ${req.adminChangeLocation ? sectionRow('موقع التغيير', req.adminChangeLocation) : ''}
+                        ${req.currentTasksDescription ? sectionRow('وصف المهام الحالية', req.currentTasksDescription) : ''}
+                        ${req.newTasksDescription ? sectionRow('وصف المهام الجديدة', req.newTasksDescription) : ''}
+                        ${req.responsibleRequestingDepartment ? sectionRow('مسئول الإدارة / القسم الطالب للتغيير', req.responsibleRequestingDepartment) : ''}
+                        ${req.responsibleImplementingDepartment ? sectionRow('مسئول الإدارة / القسم المنفذ', req.responsibleImplementingDepartment) : ''}
+                    </table>
+                ` : ''}
+
+                ${(req.previousInjury || req.chronicDiseases || req.healthNotes) ? `
+                    <div style="margin-top:18px;margin-bottom:10px;font-weight:700;color:#111827;">الحالة الصحية للموظف</div>
+                    <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:12px;">
+                        ${req.previousInjury ? sectionRow('إصابة سابقة', req.previousInjury) : ''}
+                        ${req.chronicDiseases ? sectionRow('أمراض مزمنة', req.chronicDiseases) : ''}
+                        ${req.healthNotes ? sectionRow('ملاحظات صحية', req.healthNotes) : ''}
+                    </table>
+                ` : ''}
+
+                ${trainingHtml ? `
+                    <div style="margin-top:18px;margin-bottom:10px;font-weight:700;color:#111827;">برامج التدريب والتوعية والمتطلبات الأخرى</div>
+                    ${trainingHtml}
+                ` : ''}
+
+                ${documentsHtml ? `
+                    <div style="margin-top:18px;margin-bottom:10px;font-weight:700;color:#111827;">الوثائق المطلوب تعديلها</div>
+                    ${documentsHtml}
+                ` : ''}
+
+                ${(req.committeeMembersJson || req.committeeRecommendations) ? `
+                    <div style="margin-top:18px;margin-bottom:10px;font-weight:700;color:#111827;">لجنة دراسة التغييرات</div>
+                    <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:12px;">
+                        ${req.committeeMembersJson ? sectionRow('أعضاء اللجنة', req.committeeMembersJson) : ''}
+                        ${req.committeeRecommendations ? sectionRow('توصيات اللجنة', req.committeeRecommendations) : ''}
+                    </table>
+                ` : ''}
+
+                ${(req.riskAssessment || req.mitigationActions) ? `
+                    <div style="margin-top:18px;margin-bottom:10px;font-weight:700;color:#111827;">تقييم المخاطر وإجراءات التخفيف</div>
+                    ${req.riskAssessment ? `
+                        <div style="margin-bottom:8px;font-size:12px;">
+                            <div style="font-weight:600;margin-bottom:4px;">تقييم المخاطر</div>
+                            <div style="border:1px solid #e5e7eb;padding:8px 10px;border-radius:6px;">${safe(req.riskAssessment)}</div>
+                        </div>
+                    ` : ''}
+                    ${req.mitigationActions ? `
+                        <div style="font-size:12px;">
+                            <div style="font-weight:600;margin-bottom:4px;">إجراءات التخفيف</div>
+                            <div style="border:1px solid #e5e7eb;padding:8px 10px;border-radius:6px;">${safe(req.mitigationActions)}</div>
+                        </div>
+                    ` : ''}
+                ` : ''}
+            `;
+
+            const createdAt = req.createdAt || new Date().toISOString();
+            const updatedAt = req.updatedAt || req.createdAt || new Date().toISOString();
+
+            const htmlContent = (typeof FormHeader !== 'undefined' && typeof FormHeader.generatePDFHTML === 'function')
+                ? FormHeader.generatePDFHTML(
+                    formCode,
+                    formTitle,
+                    content,
+                    false,
+                    true,
+                    { source: 'ChangeManagement', changeType: req.changeType || '', id: req.id || '', requestNumber: req.requestNumber || '' },
+                    createdAt,
+                    updatedAt
+                )
+                : `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>${formTitle}</title></head><body style="font-family:'Cairo','Segoe UI',Tahoma,Arial,sans-serif;direction:rtl;padding:20px;">${content}</body></html>`;
+
+            const blob = new Blob(['\ufeff' + htmlContent], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const win = window.open(url, '_blank');
+            if (!win && typeof Notification !== 'undefined' && Notification.error) {
+                Notification.error('يرجى السماح بالنوافذ المنبثقة لتصدير التقرير');
+            }
+        } catch (error) {
+            if (typeof Loading !== 'undefined' && Loading.hide) Loading.hide();
+            if (typeof Utils !== 'undefined' && Utils.safeError) Utils.safeError('خطأ في تصدير تقرير طلب التغيير:', error);
+            if (typeof Notification !== 'undefined' && Notification.error) Notification.error('فشل تصدير التقرير: ' + (error && error.message ? error.message : String(error)));
+        }
+    },
+
     handleSearch(value) {
         this.state.filters.search = value;
         if (this.state._searchDebounce) clearTimeout(this.state._searchDebounce);
@@ -1419,7 +1715,7 @@ ${data.map(r => '<tr>' + (Object.keys(data[0] || {})).map(k => '<td>' + safe(r[k
                     <tbody>
                         ${requests.map(r => `
                             <tr class="border-b hover:opacity-90" style="border-color: var(--border-color); background: var(--card-bg);">
-                                <td class="p-3">${safe(r.requestNumber || r.id)}</td>
+                                <td class="p-3">${safe(this.getDisplayRequestNumber(r) || (r.requestNumber || r.id || ''))}</td>
                                 <td class="p-3">${safe(r.title || '—')}</td>
                                 <td class="p-3">${this.getChangeTypeLabel(r.changeType)}</td>
                                 <td class="p-3"><span class="px-2 py-1 rounded text-xs font-medium ${statusColors[r.status] || 'bg-gray-100'}">${this.getStatusLabel(r.status)}</span></td>
