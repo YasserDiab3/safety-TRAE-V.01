@@ -5718,22 +5718,40 @@
 
                     if (!login && !app) return;
 
-                    var loginVisible = login && window.getComputedStyle(login).display !== 'none' && login.offsetHeight > 0;
-                    var appVisible = app && window.getComputedStyle(app).display !== 'none' && app.offsetHeight > 0;
+                    var loginStyle = login ? window.getComputedStyle(login) : null;
+                    var appStyle = app ? window.getComputedStyle(app) : null;
 
-                    // إذا كانت كل من شاشة الدخول والتطبيق الرئيسي مخفية، نعيد إظهار واجهة مناسبة
+                    var loginVisible = login &&
+                        loginStyle.display !== 'none' &&
+                        loginStyle.visibility !== 'hidden' &&
+                        login.offsetHeight > 0;
+
+                    var appVisible = app &&
+                        appStyle.display !== 'none' &&
+                        appStyle.visibility !== 'hidden' &&
+                        app.offsetHeight > 0;
+
+                    // إذا كانت كل من شاشة الدخول والتطبيق الرئيسي مخفية أو غير مرئية، نعيد إظهار واجهة مناسبة
                     if (!loginVisible && !appVisible) {
                         var hasSession = false;
                         try {
                             hasSession = !!(sessionStorage.getItem('hse_current_session') || localStorage.getItem('hse_remember_user'));
                         } catch (e) {}
 
+                        // إزالة أي كلاس قد يخفي التطبيق (مثل شاشة السياسة بعد الدخول)
+                        try {
+                            document.documentElement.classList.remove('hse-post-login-overlay-active');
+                            document.body.classList.remove('hse-post-login-overlay-active');
+                        } catch (e) {}
+
                         // في حالة وجود جلسة محفوظة نُظهر التطبيق مباشرة، وإلا نُظهر شاشة الدخول
                         if (hasSession && app) {
                             document.body.classList.add('app-active');
                             app.style.display = 'flex';
+                            app.style.visibility = 'visible';
                         } else if (login) {
                             login.style.display = 'flex';
+                            login.style.visibility = 'visible';
                         }
                     }
                 } catch (e) {
