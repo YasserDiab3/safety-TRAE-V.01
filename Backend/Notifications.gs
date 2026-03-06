@@ -524,3 +524,269 @@ function notifyAdminsOfNewChangeRequest(changeRequestId, title, requestedBy) {
         Logger.log('Error in notifyAdminsOfNewChangeRequest: ' + e.toString());
     }
 }
+
+/**
+ * إرسال التقرير الدوري تلقائياً
+ * @param {Object} reportData - بيانات التقرير
+ * @param {string} periodType - نوع الفترة (monthly/yearly)
+ * @param {string} periodLabel - وصف الفترة
+ */
+function sendPeriodicReportNotification(reportData, periodType, periodLabel) {
+    try {
+        const spreadsheetId = getSpreadsheetId();
+        if (!spreadsheetId) return;
+        
+        // الحصول على إعدادات التقارير الدورية
+        const settings = readFromSheet('Settings', spreadsheetId);
+        const periodicSettings = settings.find(s => s.key === 'periodicReportsSettings');
+        
+        if (!periodicSettings || !periodicSettings.value || !JSON.parse(periodicSettings.value).enabled) {
+            return; // التقارير الدورية غير مفعلة
+        }
+        
+        const settingsValue = JSON.parse(periodicSettings.value);
+        const notificationEmails = settingsValue.notificationEmails || [];
+        
+        if (notificationEmails.length === 0) {
+            Logger.log('لا توجد عناوين بريد إلكتروني مخصصة للإشعارات');
+            return;
+        }
+        
+        // إعداد محتوى البريد الإلكتروني
+        const subject = periodType === 'monthly' ? 
+            `التقرير الشهري - ${periodLabel}` : 
+            `التقرير السنوي - ${periodLabel}`;
+            
+        const body = `
+السلام عليكم ورحمة الله وبركاته،
+
+تم إعداد التقرير الدوري بنجاح.
+
+معلومات التقرير:
+- نوع التقرير: ${periodType === 'monthly' ? 'شهري' : 'سنوي'}
+- الفترة: ${periodLabel}
+- تاريخ الإعداد: ${new Date().toLocaleDateString('ar-SA')}
+
+ملخص التقرير:
+- عدد تصاريح العمل: ${reportData.workPermitsCount || 0}
+- عدد الملاحظات: ${reportData.observationsCount || 0}
+- عدد الحوادث: ${reportData.incidentsCount || 0}
+- عدد الزيارات الطبية: ${reportData.clinicVisitsCount || 0}
+- عدد برامج تدريب الموظفين: ${reportData.employeeTrainingPrograms || 0}
+- عدد برامج تدريب المقاولين: ${reportData.contractorTrainingPrograms || 0}
+- عدد مخالفات الموظفين: ${reportData.employeeViolationsCount || 0}
+- عدد مخالفات المقاولين: ${reportData.contractorViolationsCount || 0}
+
+لعرض التقرير الكامل، يرجى تسجيل الدخول إلى النظام.
+
+مع أطيب التحية،
+نظام إدارة السلامة والصحة المهنية
+`;
+
+        // إرسال البريد الإلكتروني إلى جميع المستلمين
+        notificationEmails.forEach(function(email) {
+            try {
+                MailApp.sendEmail({
+                    to: email,
+                    subject: subject,
+                    body: body
+                });
+                Logger.log('تم إرسال التقرير الدوري إلى: ' + email);
+            } catch (emailError) {
+                Logger.log('خطأ في إرسال البريد إلى ' + email + ': ' + emailError.toString());
+            }
+        });
+        
+        // تسجيل الإشعار في النظام
+        notificationEmails.forEach(function(email) {
+            addNotification({
+                userId: email,
+                type: 'periodic_report',
+                priority: 'medium',
+                title: subject,
+                message: 'تم إرسال التقرير الدوري بنجاح',
+                relatedId: 'PERIODIC-' + new Date().toISOString(),
+                relatedType: 'PeriodicReport'
+            });
+        });
+        
+    } catch (e) {
+        Logger.log('Error in sendPeriodicReportNotification: ' + e.toString());
+    }
+}
+
+/**
+ * التحقق من وإرسال التقارير الدورية المستحقة
+ * تُستدعى هذه الدالة بشكل دوري (يومياً)
+ */
+function checkAndSendPeriodicReports() {
+    try {
+        const spreadsheetId = getSpreadsheetId();
+        if (!spreadsheetId) return;
+        
+        const settings = readFromSheet('Settings', spreadsheetId);
+        const periodicSettings = settings.find(s => s.key === 'periodicReportsSettings');
+        
+        if (!periodicSettings || !periodicSettings.value) {
+            return; // لا توجد إعدادات للتقارير الدورية
+        }
+        
+        const settingsValue = JSON.parse(periodicSettings.value);
+        
+        if (!settingsValue.enabled) {
+            return; // التقارير الدورية غير مفعلة
+        }
+        
+        const today = new Date();
+        const currentDay = today.getDate();
+        const currentMonth = today.getMonth();
+        const currentYear = today.getFullYear();
+        
+        // التحقق من التقارير الشهرية
+        if (settingsValue.periodType === 'monthly' && currentDay === settingsValue.dayOfMonth) {
+            // إعداد الفترة الشهرية (الشهر السابق)
+            const lastMonth = new Date(currentYear, currentMonth - 1, 1);
+            const startDate = new Date(currentYear, currentMonth - 1, 1);
+            const endDate = new Date(currentYear, currentMonth, 0);
+            const periodLabel = lastMonth.toLocaleDateString('ar-SA', { year: 'numeric', month: 'long' });
+            
+            // جمع البيانات وإرسال التقرير
+            const reportData = collectPeriodicReportData(startDate, endDate);
+            sendPeriodicReportNotification(reportData, 'monthly', periodLabel);
+        }
+        
+        // التحقق من التقارير السنوية (في أول يناير من كل عام)
+        if (settingsValue.periodType === 'yearly' && today.getMonth() === 0 && today.getDate() === 1) {
+            const lastYear = currentYear - 1;
+            const startDate = new Date(lastYear, 0, 1);
+            const endDate = new Date(lastYear, 11, 31);
+            const periodLabel = String(lastYear);
+            
+            // جمع البيانات وإرسال التقرير
+            const reportData = collectPeriodicReportData(startDate, endDate);
+            sendPeriodicReportNotification(reportData, 'yearly', periodLabel);
+        }
+        
+    } catch (e) {
+        Logger.log('Error in checkAndSendPeriodicReports: ' + e.toString());
+    }
+}
+
+/**
+ * جمع بيانات التقرير الدوري
+ * @param {Date} startDate - تاريخ البداية
+ * @param {Date} endDate - تاريخ النهاية
+ * @return {Object} بيانات التقرير
+ */
+function collectPeriodicReportData(startDate, endDate) {
+    try {
+        const spreadsheetId = getSpreadsheetId();
+        if (!spreadsheetId) return {};
+        
+        const data = {
+            workPermitsCount: 0,
+            observationsCount: 0,
+            incidentsCount: 0,
+            clinicVisitsCount: 0,
+            employeeTrainingPrograms: 0,
+            contractorTrainingPrograms: 0,
+            employeeViolationsCount: 0,
+            contractorViolationsCount: 0
+        };
+        
+        // تصاريح العمل
+        try {
+            const workPermits = readFromSheet('WorkPermits', spreadsheetId);
+            data.workPermitsCount = workPermits.filter(wp => {
+                const date = new Date(wp.startDate || wp.date || wp.createdAt);
+                return date >= startDate && date <= endDate;
+            }).length;
+        } catch (e) {
+            Logger.log('Error counting work permits: ' + e.toString());
+        }
+        
+        // الملاحظات
+        try {
+            const observations = readFromSheet('DailyObservations', spreadsheetId);
+            data.observationsCount = observations.filter(obs => {
+                const date = new Date(obs.date || obs.createdAt);
+                return date >= startDate && date <= endDate;
+            }).length;
+        } catch (e) {
+            Logger.log('Error counting observations: ' + e.toString());
+        }
+        
+        // الحوادث
+        try {
+            const incidents = readFromSheet('Incidents', spreadsheetId);
+            data.incidentsCount = incidents.filter(inc => {
+                const date = new Date(inc.date || inc.incidentDate || inc.createdAt);
+                return date >= startDate && date <= endDate;
+            }).length;
+        } catch (e) {
+            Logger.log('Error counting incidents: ' + e.toString());
+        }
+        
+        // الزيارات الطبية
+        try {
+            const clinicVisits = readFromSheet('ClinicVisits', spreadsheetId);
+            data.clinicVisitsCount = clinicVisits.filter(visit => {
+                const date = new Date(visit.visitDate || visit.date || visit.createdAt);
+                return date >= startDate && date <= endDate;
+            }).length;
+        } catch (e) {
+            Logger.log('Error counting clinic visits: ' + e.toString());
+        }
+        
+        // تدريبات الموظفين
+        try {
+            const employeeTrainings = readFromSheet('Training', spreadsheetId);
+            data.employeeTrainingPrograms = employeeTrainings.filter(training => {
+                const date = new Date(training.startDate || training.date || training.createdAt);
+                return date >= startDate && date <= endDate;
+            }).length;
+        } catch (e) {
+            Logger.log('Error counting employee trainings: ' + e.toString());
+        }
+        
+        // تدريبات المقاولين
+        try {
+            const contractorTrainings = readFromSheet('ContractorTrainings', spreadsheetId);
+            data.contractorTrainingPrograms = contractorTrainings.filter(training => {
+                const date = new Date(training.date || training.trainingDate || training.createdAt);
+                return date >= startDate && date <= endDate;
+            }).length;
+        } catch (e) {
+            Logger.log('Error counting contractor trainings: ' + e.toString());
+        }
+        
+        // المخالفات
+        try {
+            const violations = readFromSheet('Violations', spreadsheetId);
+            const periodViolations = violations.filter(violation => {
+                const date = new Date(violation.date || violation.violationDate || violation.createdAt);
+                return date >= startDate && date <= endDate;
+            });
+            
+            data.employeeViolationsCount = periodViolations.filter(v => 
+                v.violationType === 'موظفين' || 
+                v.category === 'موظفين' || 
+                (!v.contractorName && v.employeeName)
+            ).length;
+            
+            data.contractorViolationsCount = periodViolations.filter(v => 
+                v.violationType === 'مقاولين' || 
+                v.category === 'مقاولين' || 
+                v.contractorName
+            ).length;
+        } catch (e) {
+            Logger.log('Error counting violations: ' + e.toString());
+        }
+        
+        return data;
+        
+    } catch (e) {
+        Logger.log('Error in collectPeriodicReportData: ' + e.toString());
+        return {};
+    }
+}

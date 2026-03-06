@@ -1864,6 +1864,20 @@ function doPost(e) {
                     break;
                 
                 // ============================================
+                // التقارير الدورية (Periodic Reports)
+                // ============================================
+                case 'checkAndSendPeriodicReports':
+                    result = checkAndSendPeriodicReports();
+                    break;
+                case 'sendPeriodicReportNotification':
+                    result = sendPeriodicReportNotification(
+                        payload.reportData || {},
+                        payload.periodType || 'monthly',
+                        payload.periodLabel || ''
+                    );
+                    break;
+                
+                // ============================================
                 // إدارة الموديولات (Module Management - Admin Only)
                 // ============================================
                 case 'getAllModules':

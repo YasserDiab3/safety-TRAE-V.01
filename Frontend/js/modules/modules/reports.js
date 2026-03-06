@@ -18,6 +18,166 @@ const Reports = {
     },
 
     /**
+     * جمع بيانات التقرير الدوري حسب الأنواع المطلوبة
+     */
+    collectPeriodicReportData(data, period) {
+        const startDate = period && period.startDate ? new Date(period.startDate) : null;
+        const endDate = period && period.endDate ? new Date(period.endDate) : null;
+
+        return {
+            // تصاريح العمل
+            workPermits: this._filterArrayByDateRange(data.ptw || [], ['startDate', 'date', 'createdAt', 'endDate'], startDate, endDate),
+            
+            // الملاحظات
+            observations: this._filterArrayByDateRange(data.dailyObservations || [], ['date', 'createdAt'], startDate, endDate),
+            
+            // الحوادث
+            incidents: this._filterArrayByDateRange(data.incidents || [], ['date', 'incidentDate', 'createdAt'], startDate, endDate),
+            
+            // الزيارات الطبية
+            clinicVisits: this._filterArrayByDateRange(data.clinicVisits || [], ['visitDate', 'date', 'createdAt'], startDate, endDate),
+            
+            // التدريبات - الموظفين
+            employeeTrainings: this._filterArrayByDateRange(data.training || [], ['startDate', 'date', 'createdAt'], startDate, endDate),
+            
+            // التدريبات - المقاولين
+            contractorTrainings: this._filterArrayByDateRange(data.contractorTrainings || [], ['date', 'trainingDate', 'startDate', 'createdAt'], startDate, endDate),
+            
+            // المخالفات
+            violations: this._filterArrayByDateRange(data.violations || [], ['date', 'violationDate', 'createdAt'], startDate, endDate)
+        };
+    },
+
+    /**
+     * حساب إحصائيات التدريب للموظفين
+     */
+    calculateEmployeeTrainingStats(trainings, trainingAttendance) {
+        const allParticipants = [];
+        let totalTrainingHoursEmployees = 0;
+        const uniqueEmployeeCodes = new Set();
+
+        // جمع رموز الموظفين من سجلات الحضور
+        trainingAttendance.forEach(record => {
+            if (record.employeeCode) uniqueEmployeeCodes.add(String(record.employeeCode).trim());
+        });
+
+        // حسعدد البرامج والموضوعات
+        const employeeTrainingPrograms = trainings.length;
+        const employeeTopicsSet = new Set();
+        trainings.forEach(t => {
+            const name = (t.name || t.programName || '').toString().trim();
+            if (name) employeeTopicsSet.add(name);
+        });
+        const employeeTrainingTopics = employeeTopicsSet.size || employeeTrainingPrograms;
+
+        // حساب ساعات التدريب
+        trainings.forEach(t => {
+            if (t.hours) {
+                totalTrainingHoursEmployees += Number(parseFloat(t.hours)) || 0;
+            } else if (t.duration) {
+                totalTrainingHoursEmployees += Number(parseFloat(t.duration)) || 0;
+            } else if (t.startTime && t.endTime) {
+                try {
+                    const start = new Date(`2000-01-01 ${t.startTime}`);
+                    const end = new Date(`2000-01-01 ${t.endTime}`);
+                    const diff = (end - start) / (1000 * 60 * 60);
+                    totalTrainingHoursEmployees += Number.isFinite(diff) ? diff : 0;
+                } catch (e) { /* ignore */ }
+            }
+        });
+
+        // استخدام ساعات الحضور إذا كانت متاحة
+        const attendanceHours = trainingAttendance.reduce((sum, r) => {
+            const h = parseFloat(r.totalHours);
+            return sum + (Number.isFinite(h) ? h : 0);
+        }, 0);
+        if (attendanceHours > 0) {
+            totalTrainingHoursEmployees = attendanceHours;
+        }
+
+        // عدد المتدربين
+        const countFromParticipants = allParticipants.length;
+        const countFromTraining = trainings.reduce((acc, t) => {
+            const n = Number(t.participantsCount) || 0;
+            return acc + (Number.isFinite(n) ? n : 0);
+        }, 0);
+        const uniqueTrainees = uniqueEmployeeCodes.size > 0
+            ? uniqueEmployeeCodes.size
+            : (countFromParticipants > 0 ? countFromParticipants : countFromTraining);
+
+        return {
+            programs: employeeTrainingPrograms,
+            topics: employeeTrainingTopics,
+            totalHours: Number(totalTrainingHoursEmployees).toFixed(2),
+            trainees: uniqueTrainees
+        };
+    },
+
+    /**
+     * حساب إحصائيات التدريب للمقاولين
+     */
+    calculateContractorTrainingStats(contractorTrainings) {
+        const contractorTraineesCount = contractorTrainings.reduce((sum, t) => {
+            const n = Number(t.traineesCount || t.attendees || 0);
+            return sum + (Number.isFinite(n) ? n : 0);
+        }, 0);
+        
+        const contractorTotalHours = contractorTrainings.reduce((sum, t) => {
+            const h = parseFloat(t.totalHours || t.trainingHours || 0);
+            return sum + (Number.isFinite(h) ? h : 0);
+        }, 0);
+
+        const contractorTrainingPrograms = contractorTrainings.length;
+        const contractorTopicsSet = new Set();
+        contractorTrainings.forEach(t => {
+            const name = (t.name || t.trainingName || t.topic || '').toString().trim();
+            if (name) contractorTopicsSet.add(name);
+        });
+        const contractorTrainingTopics = contractorTopicsSet.size || contractorTrainingPrograms;
+
+        return {
+            programs: contractorTrainingPrograms,
+            topics: contractorTrainingTopics,
+            totalHours: Number(contractorTotalHours).toFixed(2),
+            trainees: contractorTraineesCount
+        };
+    },
+
+    /**
+     * حساب إحصائيات المخالفات
+     */
+    calculateViolationsStats(violations) {
+        const employeeViolations = violations.filter(v => 
+            v.violationType === 'موظفين' || 
+            v.category === 'موظفين' || 
+            (!v.contractorName && v.employeeName)
+        );
+        
+        const contractorViolations = violations.filter(v => 
+            v.violationType === 'مقاولين' || 
+            v.category === 'مقاولين' || 
+            v.contractorName
+        );
+
+        const violationsByDepartment = {};
+        const violationsByType = {};
+
+        violations.forEach(v => {
+            const dept = v.department || v.employeeDepartment || 'غير محدد';
+            violationsByDepartment[dept] = (violationsByDepartment[dept] || 0) + 1;
+            const vType = (v.violationType || 'غير محدد').trim() || 'غير محدد';
+            violationsByType[vType] = (violationsByType[vType] || 0) + 1;
+        });
+
+        return {
+            employeeCount: employeeViolations.length,
+            contractorCount: contractorViolations.length,
+            byDepartment: violationsByDepartment,
+            byType: violationsByType
+        };
+    },
+
+    /**
      * الحصول على الترجمات حسب اللغة الحالية (عناوين وواجهة فقط، لا يغيّر البيانات المخزنة)
      */
     getTranslations() {
@@ -26,6 +186,8 @@ const Reports = {
             ar: {
                 'title': 'التقارير',
                 'subtitle': 'إنشاء وتصدير التقارير المختلفة',
+                'card.period': 'تقرير شهري / سنوي',
+                'card.periodDesc': 'إنشاء تقرير إحصائي شامل للفترة (شهرياً أو سنوياً) يشمل تصاريح العمل، الملاحظات، الحوادث، الزيارات الطبية، التدريبات (الموظفين والمقاولين)، والمخالفات'
                 'card.incidents': 'تقرير الحوادث',
                 'card.incidentsDesc': 'إنشاء تقرير شامل عن جميع الحوادث المسجلة',
                 'card.training': 'تقرير التدريب',
@@ -40,9 +202,19 @@ const Reports = {
                 'msg.trainingInvalid': 'بيانات التدريب غير صحيحة',
                 'msg.unknownReport': 'نوع التقرير غير معروف',
                 'msg.allowPopups': 'يرجى السماح للنوافذ المنبثقة لعرض التقرير',
+                'msg.invalidPeriodInput': 'صيغة الفترة غير صحيحة. يرجى المحاولة مرة أخرى.',
+                'msg.periodCancelled': 'تم إلغاء اختيار الفترة.',
+                'msg.selectDateRange': 'اختر الفترة الزمنية',
+                'msg.fromDate': 'من تاريخ',
+                'msg.toDate': 'إلى تاريخ',
+                'msg.selectPeriodType': 'اختر نوع الفترة',
+                'msg.monthlyPeriod': 'فترة شهرية',
+                'msg.yearlyPeriod': 'فترة سنوية',
+                'msg.customPeriod': 'فترة مخصصة',
                 'report.incidents': 'تقرير الحوادث',
                 'report.training': 'تقرير التدريب',
                 'report.full': 'التقرير الشامل',
+                'report.periodSummary': 'التقرير الإحصائي للفترة',
                 'report.totalIncidents': 'إجمالي الحوادث',
                 'report.createdDate': 'تاريخ الإنشاء',
                 'report.isoCode': 'كود ISO',
@@ -61,6 +233,7 @@ const Reports = {
                 'report.total': 'الإجمالي',
                 'report.incidents': 'الحوادث',
                 'report.nearmiss': 'الحوادث الوشيكة',
+                'report.observations': 'الملاحظات',
                 'report.ptw': 'تصاريح العمل',
                 'report.trainingPrograms': 'برامج التدريب',
                 'report.violations': 'المخالفات',
@@ -83,11 +256,20 @@ const Reports = {
                 'report.violationType': 'نوع المخالفة',
                 'report.violationsCount': 'عدد المخالفات',
                 'report.violationsByDept': 'المخالفات حسب الإدارة',
-                'report.department': 'الإدارة'
+                'report.department': 'الإدارة',
+                'report.period': 'الفترة',
+                'report.periodTypeMonthly': 'تقرير شهري',
+                'report.periodTypeYearly': 'تقرير سنوي',
+                'report.employeeTrainingPrograms': 'عدد برامج التدريب للموظفين',
+                'report.employeeTrainingTopics': 'عدد الموضوعات التدريبية للموظفين',
+                'report.contractorTrainingPrograms': 'عدد برامج تدريب المقاولين',
+                'report.contractorTrainingTopics': 'عدد الموضوعات التدريبية للمقاولين'
             },
             en: {
                 'title': 'Reports',
                 'subtitle': 'Create and export various reports',
+                'card.period': 'Monthly / Yearly Report',
+                'card.periodDesc': 'Generate a statistical report for a specific period (monthly or yearly) including permits, observations, incidents, clinic visits, training and violations',
                 'card.incidents': 'Incidents Report',
                 'card.incidentsDesc': 'Generate a comprehensive report of all recorded incidents',
                 'card.training': 'Training Report',
@@ -102,9 +284,19 @@ const Reports = {
                 'msg.trainingInvalid': 'Invalid training data',
                 'msg.unknownReport': 'Unknown report type',
                 'msg.allowPopups': 'Please allow pop-ups to view the report',
+                'msg.invalidPeriodInput': 'Invalid period format. Please try again.',
+                'msg.periodCancelled': 'Period selection was cancelled.',
+                'msg.selectDateRange': 'Select Date Range',
+                'msg.fromDate': 'From Date',
+                'msg.toDate': 'To Date',
+                'msg.selectPeriodType': 'Select Period Type',
+                'msg.monthlyPeriod': 'Monthly Period',
+                'msg.yearlyPeriod': 'Yearly Period',
+                'msg.customPeriod': 'Custom Period',
                 'report.incidents': 'Incidents Report',
                 'report.training': 'Training Report',
                 'report.full': 'Comprehensive Report',
+                'report.periodSummary': 'Period Summary Report',
                 'report.totalIncidents': 'Total Incidents',
                 'report.createdDate': 'Creation Date',
                 'report.isoCode': 'ISO Code',
@@ -123,6 +315,7 @@ const Reports = {
                 'report.total': 'Total',
                 'report.incidents': 'Incidents',
                 'report.nearmiss': 'Near Miss',
+                'report.observations': 'Observations',
                 'report.ptw': 'Work Permits',
                 'report.trainingPrograms': 'Training Programs',
                 'report.violations': 'Violations',
@@ -145,7 +338,14 @@ const Reports = {
                 'report.violationType': 'Violation Type',
                 'report.violationsCount': 'Violations Count',
                 'report.violationsByDept': 'Violations by Department',
-                'report.department': 'Department'
+                'report.department': 'Department',
+                'report.period': 'Period',
+                'report.periodTypeMonthly': 'Monthly Report',
+                'report.periodTypeYearly': 'Yearly Report',
+                'report.employeeTrainingPrograms': 'Employee Training Programs',
+                'report.employeeTrainingTopics': 'Employee Training Topics',
+                'report.contractorTrainingPrograms': 'Contractor Training Programs',
+                'report.contractorTrainingTopics': 'Contractor Training Topics'
             }
         };
         return {
@@ -195,7 +395,7 @@ const Reports = {
                 </div>
             </div>
 
-            <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div class="content-card">
                     <div class="card-header">
                         <h3 class="card-title">
@@ -222,6 +422,22 @@ const Reports = {
                     <div class="card-body">
                         <p class="text-gray-600 mb-4">${t('card.trainingDesc')}</p>
                         <button onclick="Reports.generateAndExport('training')" class="btn-primary w-full">
+                            <i class="fas fa-file-pdf ml-2"></i>
+                            ${t('btn.generate')}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="content-card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-calendar-alt ml-2"></i>
+                            ${t('card.period')}
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-gray-600 mb-4">${t('card.periodDesc')}</p>
+                        <button onclick="Reports.generateAndExport('period')" class="btn-primary w-full">
                             <i class="fas fa-file-pdf ml-2"></i>
                             ${t('btn.generate')}
                         </button>
@@ -300,6 +516,176 @@ const Reports = {
         }
     },
 
+    _filterArrayByDateRange(array, dateFields, startDate, endDate) {
+        if (!Array.isArray(array) || !startDate || !endDate) return Array.isArray(array) ? array.slice() : [];
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+            return array.slice();
+        }
+        return array.filter(item => {
+            if (!item || typeof item !== 'object') return false;
+            let value = null;
+            for (let i = 0; i < dateFields.length; i++) {
+                const field = dateFields[i];
+                if (item[field]) {
+                    value = item[field];
+                    break;
+                }
+            }
+            if (!value) return false;
+            const d = value instanceof Date ? value : new Date(value);
+            if (isNaN(d.getTime())) return false;
+            return d >= start && d <= end;
+        });
+    },
+
+    async _askForPeriod() {
+        const { t, lang } = this.getTranslations();
+        try {
+            // خيار نوع الفترة
+            const typePrompt = lang === 'ar'
+                ? 'اختر نوع الفترة:\n1- شهري\n2- سنوي\n3- فترة مخصصة (من - إلى)'
+                : 'Choose period type:\n1- Monthly\n2- Yearly\n3- Custom Period (From - To)';
+            const typeInput = window.prompt(typePrompt, '1');
+            if (typeInput === null) {
+                if (typeof Notification !== 'undefined' && Notification.info) {
+                    Notification.info(t('msg.periodCancelled'));
+                }
+                return null;
+            }
+            const trimmedType = String(typeInput).trim();
+            
+            // فترة مخصصة (من - إلى)
+            if (trimmedType === '3') {
+                const fromPrompt = lang === 'ar'
+                    ? 'أدخل تاريخ البداية بصيغة YYYY-MM-DD (مثال: 2026-01-01)'
+                    : 'Enter start date in format YYYY-MM-DD (e.g. 2026-01-01)';
+                const fromInput = window.prompt(fromPrompt);
+                if (fromInput === null) {
+                    if (typeof Notification !== 'undefined' && Notification.info) {
+                        Notification.info(t('msg.periodCancelled'));
+                    }
+                    return null;
+                }
+                
+                const toPrompt = lang === 'ar'
+                    ? 'أدخل تاريخ النهاية بصيغة YYYY-MM-DD (مثال: 2026-01-31)'
+                    : 'Enter end date in format YYYY-MM-DD (e.g. 2026-01-31)';
+                const toInput = window.prompt(toPrompt);
+                if (toInput === null) {
+                    if (typeof Notification !== 'undefined' && Notification.info) {
+                        Notification.info(t('msg.periodCancelled'));
+                    }
+                    return null;
+                }
+                
+                const fromMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(fromInput).trim());
+                const toMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(toInput).trim());
+                
+                if (!fromMatch || !toMatch) {
+                    if (typeof Notification !== 'undefined' && Notification.error) {
+                        Notification.error(t('msg.invalidPeriodInput'));
+                    }
+                    return null;
+                }
+                
+                const fromDate = new Date(parseInt(fromMatch[1], 10), parseInt(fromMatch[2], 10) - 1, parseInt(fromMatch[3], 10));
+                const toDate = new Date(parseInt(toMatch[1], 10), parseInt(toMatch[2], 10) - 1, parseInt(toMatch[3], 10));
+                
+                if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime()) || fromDate > toDate) {
+                    if (typeof Notification !== 'undefined' && Notification.error) {
+                        Notification.error(t('msg.invalidPeriodInput'));
+                    }
+                    return null;
+                }
+                
+                const label = `${fromDate.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-GB')} - ${toDate.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-GB')}`;
+                return {
+                    type: 'custom',
+                    startDate: fromDate,
+                    endDate: toDate,
+                    label
+                };
+            }
+            
+            const isYearly = trimmedType === '2';
+
+            if (!isYearly) {
+                const monthPrompt = lang === 'ar'
+                    ? 'أدخل السنة والشهر بصيغة YYYY-MM (مثال: 2026-02)'
+                    : 'Enter year-month in format YYYY-MM (e.g. 2026-02)';
+                const monthInput = window.prompt(monthPrompt);
+                if (monthInput === null) {
+                    if (typeof Notification !== 'undefined' && Notification.info) {
+                        Notification.info(t('msg.periodCancelled'));
+                    }
+                    return null;
+                }
+                const match = /^(\d{4})-(\d{1,2})$/.exec(String(monthInput).trim());
+                if (!match) {
+                    if (typeof Notification !== 'undefined' && Notification.error) {
+                        Notification.error(t('msg.invalidPeriodInput'));
+                    }
+                    return null;
+                }
+                const year = parseInt(match[1], 10);
+                const month = parseInt(match[2], 10);
+                if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+                    if (typeof Notification !== 'undefined' && Notification.error) {
+                        Notification.error(t('msg.invalidPeriodInput'));
+                    }
+                    return null;
+                }
+                const startDate = new Date(year, month - 1, 1);
+                const endDate = new Date(year, month, 0);
+                const label = `${year}-${month.toString().padStart(2, '0')}`;
+                return {
+                    type: 'monthly',
+                    year,
+                    month,
+                    startDate,
+                    endDate,
+                    label
+                };
+            } else {
+                const nowYear = new Date().getFullYear();
+                const yearPrompt = lang === 'ar'
+                    ? 'أدخل السنة بصيغة YYYY (مثال: 2026)'
+                    : 'Enter year in format YYYY (e.g. 2026)';
+                const yearInput = window.prompt(yearPrompt, String(nowYear));
+                if (yearInput === null) {
+                    if (typeof Notification !== 'undefined' && Notification.info) {
+                        Notification.info(t('msg.periodCancelled'));
+                    }
+                    return null;
+                }
+                const year = parseInt(String(yearInput).trim(), 10);
+                if (!Number.isFinite(year)) {
+                    if (typeof Notification !== 'undefined' && Notification.error) {
+                        Notification.error(t('msg.invalidPeriodInput'));
+                    }
+                    return null;
+                }
+                const startDate = new Date(year, 0, 1);
+                const endDate = new Date(year, 11, 31);
+                const label = String(year);
+                return {
+                    type: 'yearly',
+                    year,
+                    startDate,
+                    endDate,
+                    label
+                };
+            }
+        } catch (e) {
+            if (typeof Utils !== 'undefined' && Utils.safeWarn) {
+                Utils.safeWarn('Error in _askForPeriod:', e);
+            }
+            return null;
+        }
+    },
+
     async generateAndExport(type) {
         let printWindow = null;
         try {
@@ -320,6 +706,8 @@ const Reports = {
             printWindow.document.close();
 
             if (type === 'full') {
+                await this.ensureTrainingDataForReport();
+            } else if (type === 'period') {
                 await this.ensureTrainingDataForReport();
             }
 
@@ -347,6 +735,15 @@ const Reports = {
                         return;
                     }
                     content = this.generateTrainingReport(trainingData);
+                    break;
+                case 'period':
+                    const period = await this._askForPeriod();
+                    if (!period) {
+                        if (printWindow) printWindow.close();
+                        return;
+                    }
+                    title = `${t('report.periodSummary')} - ${period.label}`;
+                    content = this.generatePeriodSummaryReport(data, period);
                     break;
                 case 'full':
                     title = t('report.full');
@@ -416,6 +813,186 @@ const Reports = {
                     `).join('')}
                 </tbody>
             </table>
+        `;
+    },
+
+    generatePeriodSummaryReport(data, period) {
+        const { t, lang } = this.getTranslations();
+        const dateLocale = lang === 'ar' ? 'ar-SA' : 'en-GB';
+
+        // جمع البيانات حسب الفترة الزمنية
+        const reportData = this.collectPeriodicReportData(data, period);
+        
+        // حساب إحصائيات التدريب
+        const trainingAttendanceAll = data.trainingAttendance || [];
+        const trainingAttendance = this._filterArrayByDateRange(trainingAttendanceAll, ['date', 'attendanceDate', 'createdAt'], period.startDate, period.endDate);
+        
+        const employeeStats = this.calculateEmployeeTrainingStats(reportData.employeeTrainings, trainingAttendance);
+        const contractorStats = this.calculateContractorTrainingStats(reportData.contractorTrainings);
+        const violationsStats = this.calculateViolationsStats(reportData.violations);
+
+        const hourLabel = t('report.hour');
+        const periodTypeLabel = period.type === 'yearly' ? t('report.periodTypeYearly') : t('report.periodTypeMonthly');
+        const periodRangeLabel = (period.startDate && period.endDate)
+            ? `${period.startDate.toLocaleDateString(dateLocale)} - ${period.endDate.toLocaleDateString(dateLocale)}`
+            : period.label;
+
+        // إنشاء HTML للمخالفات حسب النوع والقسم
+        const violationsByDeptHTML = Object.keys(violationsStats.byDepartment).map(dept =>
+            `<tr><td>${Utils.escapeHTML(dept)}</td><td>${violationsStats.byDepartment[dept]}</td></tr>`
+        ).join('');
+        const violationsByTypeHTML = Object.keys(violationsStats.byType).map(type =>
+            `<tr><td>${Utils.escapeHTML(type)}</td><td>${violationsStats.byType[type]}</td></tr>`
+        ).join('');
+
+        const hourLabel = t('report.hour');
+        const periodTypeLabel = period.type === 'yearly' ? t('report.periodTypeYearly') : t('report.periodTypeMonthly');
+        const periodRangeLabel = (startDate && endDate)
+            ? `${startDate.toLocaleDateString(dateLocale)} - ${endDate.toLocaleDateString(dateLocale)}`
+            : period.label;
+
+        return `
+            <div class="section-title">${t('report.periodSummary')}</div>
+            <p style="margin-bottom: 10px; color: #666;">
+                ${t('report.period')}: ${Utils.escapeHTML(periodRangeLabel)} (${Utils.escapeHTML(periodTypeLabel)})
+            </p>
+            <p style="margin-bottom: 20px; color: #666;">
+                ${t('report.createdDate')}: ${new Date().toLocaleDateString(dateLocale)}
+            </p>
+
+            <h3 style="margin-top: 30px; margin-bottom: 15px; font-weight: bold; color: #333;">${t('report.basicStats')}</h3>
+            <table style="margin-bottom: 30px;">
+                <thead>
+                    <tr>
+                        <th>${t('report.type')}</th>
+                        <th>${t('report.total')}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>${t('report.ptw')}</td>
+                        <td>${reportData.workPermits.length}</td>
+                    </tr>
+                    <tr>
+                        <td>${t('report.observations')}</td>
+                        <td>${reportData.observations.length}</td>
+                    </tr>
+                    <tr>
+                        <td>${t('report.incidents')}</td>
+                        <td>${reportData.incidents.length}</td>
+                    </tr>
+                    <tr>
+                        <td>${t('report.clinicVisits')}</td>
+                        <td>${reportData.clinicVisits.length}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3 style="margin-top: 30px; margin-bottom: 15px; font-weight: bold; color: #333;">تدريبات الموظفين</h3>
+            <table style="margin-bottom: 30px;">
+                <thead>
+                    <tr>
+                        <th>البند</th>
+                        <th>القيمة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>عدد برامج التدريب للموظفين</td>
+                        <td>${employeeStats.programs}</td>
+                    </tr>
+                    <tr>
+                        <td>عدد الموضوعات التدريبية للموظفين</td>
+                        <td>${employeeStats.topics}</td>
+                    </tr>
+                    <tr>
+                        <td>إجمالي ساعات التدريب للموظفين</td>
+                        <td>${employeeStats.totalHours} ${hourLabel}</td>
+                    </tr>
+                    <tr>
+                        <td>عدد المتدربين من الموظفين</td>
+                        <td>${employeeStats.trainees}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3 style="margin-top: 30px; margin-bottom: 15px; font-weight: bold; color: #333;">تدريبات المقاولين</h3>
+            <table style="margin-bottom: 30px;">
+                <thead>
+                    <tr>
+                        <th>البند</th>
+                        <th>القيمة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>عدد برامج تدريب المقاولين</td>
+                        <td>${contractorStats.programs}</td>
+                    </tr>
+                    <tr>
+                        <td>عدد الموضوعات التدريبية للمقاولين</td>
+                        <td>${contractorStats.topics}</td>
+                    </tr>
+                    <tr>
+                        <td>إجمالي ساعات التدريب للمقاولين</td>
+                        <td>${contractorStats.totalHours} ${hourLabel}</td>
+                    </tr>
+                    <tr>
+                        <td>عدد المتدربين من المقاولين</td>
+                        <td>${contractorStats.trainees}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3 style="margin-top: 30px; margin-bottom: 15px; font-weight: bold; color: #333;">المخالفات</h3>
+            <table style="margin-bottom: 30px;">
+                <thead>
+                    <tr>
+                        <th>البند</th>
+                        <th>القيمة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>عدد المخالفات للموظفين</td>
+                        <td>${violationsStats.employeeCount}</td>
+                    </tr>
+                    <tr>
+                        <td>عدد المخالفات للمقاولين</td>
+                        <td>${violationsStats.contractorCount}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            ${violationsByTypeHTML ? `
+            <h3 style="margin-top: 30px; margin-bottom: 15px; font-weight: bold; color: #333;">${t('report.violationsByType')}</h3>
+            <table style="margin-bottom: 30px;">
+                <thead>
+                    <tr>
+                        <th>${t('report.violationType')}</th>
+                        <th>${t('report.violationsCount')}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${violationsByTypeHTML}
+                </tbody>
+            </table>
+            ` : ''}
+
+            ${violationsByDeptHTML ? `
+            <h3 style="margin-top: 30px; margin-bottom: 15px; font-weight: bold; color: #333;">${t('report.violationsByDept')}</h3>
+            <table style="margin-bottom: 30px;">
+                <thead>
+                    <tr>
+                        <th>${t('report.department')}</th>
+                        <th>${t('report.violationsCount')}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${violationsByDeptHTML}
+                </tbody>
+            </table>
+            ` : ''}
         `;
     },
 
