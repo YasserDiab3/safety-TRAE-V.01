@@ -2982,9 +2982,12 @@ const PeriodicInspections = {
     },
 
     renderDailySafetyCheckListTable(records) {
-        if (!records || records.length === 0) return '<div class="empty-state"><p class="text-gray-500">لا توجد سجلات. اضغط "إضافة سجل" لتسجيل فحص يومي جديد.</p></div>';
-        const rows = records.sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt)).map(r => `
+        if (!records || records.length === 0) return '<div class="empty-state"><p class="text-gray-500">لا توجد سجلات. اضغط \"إضافة سجل\" لتسجيل فحص يومي جديد.</p></div>';
+        const rows = records
+            .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))
+            .map(r => `
             <tr>
+                <td>${Utils.escapeHTML(this.getDailySafetyCheckListSerialNumber(r))}</td>
                 <td>${Utils.escapeHTML(r.siteName || '-')}</td>
                 <td>${r.date ? Utils.formatDate(r.date) : '-'}</td>
                 <td>${Utils.escapeHTML(r.inspectorName || '-')}</td>
@@ -2998,7 +3001,7 @@ const PeriodicInspections = {
         `).join('');
         return `<div class="table-wrapper" style="width:100%; overflow-x:auto;">
             <table class="data-table table-header-red" style="width:100%;">
-                <thead><tr><th style="min-width:120px;">المصنع/الموقع</th><th style="min-width:100px;">التاريخ</th><th style="min-width:120px;">القائم بالمرور</th><th style="min-width:80px;">الوردية</th><th style="min-width:100px;">الإجراء</th></tr></thead>
+                <thead><tr><th style="min-width:90px;">رقم التقرير</th><th style="min-width:120px;">المصنع/الموقع</th><th style="min-width:100px;">التاريخ</th><th style="min-width:120px;">القائم بالمرور</th><th style="min-width:80px;">الوردية</th><th style="min-width:100px;">الإجراء</th></tr></thead>
                 <tbody>${rows}</tbody>
             </table>
         </div>`;
