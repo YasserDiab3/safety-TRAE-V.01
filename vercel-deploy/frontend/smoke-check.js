@@ -28,8 +28,8 @@ function normalizeLocalUrl(u) {
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('//')) return null;
   if (trimmed.startsWith('data:')) return null;
   if (trimmed.startsWith('#')) return null;
-  // remove leading /
-  return trimmed.replace(/^\/+/, '');
+  const noQuery = trimmed.split(/[?#]/)[0];
+  return noQuery.replace(/^\/+/, '');
 }
 
 function extractAll(html, regex) {

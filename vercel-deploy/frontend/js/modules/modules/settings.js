@@ -831,6 +831,70 @@ const Settings = {
                                         <i class="fas fa-save ml-2"></i>حفظ قائمة الإيميلات
                                     </button>
                                 </div>
+                                
+                                <!-- إعدادات التقارير الدورية -->
+                                <div class="border-t pt-4 mt-4">
+                                    <h3 class="text-lg font-semibold mb-4">
+                                        <i class="fas fa-calendar-alt ml-2"></i>
+                                        إعدادات التقارير الدورية
+                                    </h3>
+                                    <div class="space-y-4">
+                                        <div class="flex items-center justify-between p-3 bg-gray-50 rounded">
+                                            <div>
+                                                <label class="font-semibold">تفعيل التقارير الدورية</label>
+                                                <p class="text-sm text-gray-600">إرسال التقارير الدورية تلقائياً</p>
+                                            </div>
+                                            <label class="relative inline-flex items-center cursor-pointer">
+                                                <input type="checkbox" id="periodic-reports-enabled" class="sr-only peer" 
+                                                    ${AppState.periodicReportsEnabled ? 'checked' : ''}>
+                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                            </label>
+                                        </div>
+                                        
+                                        <div>
+                                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                                <i class="fas fa-clock ml-2"></i>
+                                                نوع الفترة الافتراضية
+                                            </label>
+                                            <select id="periodic-reports-period-type" class="form-input">
+                                                <option value="monthly" ${AppState.periodicReportsPeriodType === 'monthly' ? 'selected' : ''}>
+                                                    تقرير شهري
+                                                </option>
+                                                <option value="yearly" ${AppState.periodicReportsPeriodType === 'yearly' ? 'selected' : ''}>
+                                                    تقرير سنوي
+                                                </option>
+                                            </select>
+                                        </div>
+                                        
+                                        <div>
+                                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                                <i class="fas fa-calendar-day ml-2"></i>
+                                                يوم الإرسال الشهري
+                                            </label>
+                                            <select id="periodic-reports-day" class="form-input">
+                                                ${Array.from({length: 28}, (_, i) => `
+                                                    <option value="${i + 1}" ${AppState.periodicReportsDay === (i + 1) ? 'selected' : ''}>
+                                                        ${i + 1}
+                                                    </option>
+                                                `).join('')}
+                                            </select>
+                                            <p class="text-xs text-gray-500 mt-1">
+                                                <i class="fas fa-info-circle ml-1"></i>
+                                                سيتم إرسال التقرير في هذا اليوم من كل شهر
+                                            </p>
+                                        </div>
+                                        
+                                        <div class="flex gap-2">
+                                            <button type="button" id="save-periodic-reports-settings-btn" class="btn-primary">
+                                                <i class="fas fa-save ml-2"></i>حفظ الإعدادات
+                                            </button>
+                                            <button type="button" id="test-periodic-report-btn" class="btn-secondary">
+                                                <i class="fas fa-paper-plane ml-2"></i>اختبار الإرسال
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1903,6 +1967,70 @@ const Settings = {
             Utils.safeWarn('⚠️ DataManager غير متاح - لم يتم حفظ البيانات');
         }
                     Notification.success('تم حفظ قائمة الإيميلات بنجاح');
+                });
+            }
+
+            // إعدادات التقارير الدورية
+            const periodicReportsEnabled = document.getElementById('periodic-reports-enabled');
+            const periodicReportsPeriodType = document.getElementById('periodic-reports-period-type');
+            const periodicReportsDay = document.getElementById('periodic-reports-day');
+            const savePeriodicReportsSettingsBtn = document.getElementById('save-periodic-reports-settings-btn');
+            const testPeriodicReportBtn = document.getElementById('test-periodic-report-btn');
+
+            if (periodicReportsEnabled) {
+                periodicReportsEnabled.addEventListener('change', (e) => {
+                    if (!AppState.periodicReportsSettings) {
+                        AppState.periodicReportsSettings = {};
+                    }
+                    AppState.periodicReportsSettings.enabled = e.target.checked;
+                });
+            }
+
+            if (periodicReportsPeriodType) {
+                periodicReportsPeriodType.addEventListener('change', (e) => {
+                    if (!AppState.periodicReportsSettings) {
+                        AppState.periodicReportsSettings = {};
+                    }
+                    AppState.periodicReportsSettings.periodType = e.target.value;
+                });
+            }
+
+            if (periodicReportsDay) {
+                periodicReportsDay.addEventListener('change', (e) => {
+                    if (!AppState.periodicReportsSettings) {
+                        AppState.periodicReportsSettings = {};
+                    }
+                    AppState.periodicReportsSettings.dayOfMonth = parseInt(e.target.value);
+                });
+            }
+
+            if (savePeriodicReportsSettingsBtn) {
+                savePeriodicReportsSettingsBtn.addEventListener('click', () => {
+                    if (!AppState.periodicReportsSettings) {
+                        AppState.periodicReportsSettings = {
+                            enabled: false,
+                            periodType: 'monthly',
+                            dayOfMonth: 1
+                        };
+                    }
+                    
+                    // حفظ البيانات باستخدام window.DataManager
+                    if (typeof window.DataManager !== 'undefined' && window.DataManager.save) {
+                        window.DataManager.save();
+                    } else {
+                        Utils.safeWarn('⚠️ DataManager غير متاح - لم يتم حفظ البيانات');
+                    }
+                    Notification.success('تم حفظ إعدادات التقارير الدورية بنجاح');
+                });
+            }
+
+            if (testPeriodicReportBtn) {
+                testPeriodicReportBtn.addEventListener('click', () => {
+                    if (typeof Reports !== 'undefined' && Reports.generateAndExport) {
+                        Reports.generateAndExport('period');
+                    } else {
+                        Notification.error('موديول التقارير غير متاح');
+                    }
                 });
             }
 

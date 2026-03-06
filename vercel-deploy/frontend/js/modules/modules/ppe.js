@@ -897,7 +897,7 @@ const PPE = {
                         <input type="hidden" id="ppe-employee-position" value="${Utils.escapeHTML(employeeInfo.position)}">
                         <input type="hidden" id="ppe-employee-branch" value="${Utils.escapeHTML(employeeInfo.branch)}">
                         <input type="hidden" id="ppe-employee-location" value="${Utils.escapeHTML(employeeInfo.location)}">
-                        
+
                         <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                             <div>
