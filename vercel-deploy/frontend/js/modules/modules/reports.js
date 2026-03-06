@@ -187,7 +187,7 @@ const Reports = {
                 'title': 'التقارير',
                 'subtitle': 'إنشاء وتصدير التقارير المختلفة',
                 'card.period': 'تقرير شهري / سنوي',
-                'card.periodDesc': 'إنشاء تقرير إحصائي شامل للفترة (شهرياً أو سنوياً) يشمل تصاريح العمل، الملاحظات، الحوادث، الزيارات الطبية، التدريبات (الموظفين والمقاولين)، والمخالفات'
+                'card.periodDesc': 'إنشاء تقرير إحصائي شامل للفترة (شهرياً أو سنوياً) يشمل تصاريح العمل، الملاحظات، الحوادث، الزيارات الطبية، التدريبات (الموظفين والمقاولين)، والمخالفات',
                 'card.incidents': 'تقرير الحوادث',
                 'card.incidentsDesc': 'إنشاء تقرير شامل عن جميع الحوادث المسجلة',
                 'card.training': 'تقرير التدريب',
@@ -844,12 +844,6 @@ const Reports = {
         const violationsByTypeHTML = Object.keys(violationsStats.byType).map(type =>
             `<tr><td>${Utils.escapeHTML(type)}</td><td>${violationsStats.byType[type]}</td></tr>`
         ).join('');
-
-        const hourLabel = t('report.hour');
-        const periodTypeLabel = period.type === 'yearly' ? t('report.periodTypeYearly') : t('report.periodTypeMonthly');
-        const periodRangeLabel = (startDate && endDate)
-            ? `${startDate.toLocaleDateString(dateLocale)} - ${endDate.toLocaleDateString(dateLocale)}`
-            : period.label;
 
         return `
             <div class="section-title">${t('report.periodSummary')}</div>
