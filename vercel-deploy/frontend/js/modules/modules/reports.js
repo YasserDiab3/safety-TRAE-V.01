@@ -688,12 +688,20 @@ const Reports = {
 
     async generateAndExport(type) {
         let printWindow = null;
+        let period = null;
         try {
             const { t } = this.getTranslations();
 
             if (typeof AppState === 'undefined' || !AppState.appData) {
                 Notification.error(t('msg.noData'));
                 return;
+            }
+
+            if (type === 'period') {
+                period = await this._askForPeriod();
+                if (!period) {
+                    return;
+                }
             }
 
             // فتح النافذة فوراً عند نقرة المستخدم لتجنب منع المتصفح للنوافذ المنبثقة (قبل أي await)
@@ -737,7 +745,6 @@ const Reports = {
                     content = this.generateTrainingReport(trainingData);
                     break;
                 case 'period':
-                    const period = await this._askForPeriod();
                     if (!period) {
                         if (printWindow) printWindow.close();
                         return;
