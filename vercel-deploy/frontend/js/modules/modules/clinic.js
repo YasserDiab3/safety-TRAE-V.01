@@ -14,7 +14,9 @@ const Clinic = {
         },
         currentInjuryAttachments: [],
         medicationAlertsNotified: new Set(),
-        initialized: false
+        initialized: false,
+        visitsDataFullyLoaded: false,
+        visitsDataLoadPromise: null
     },
 
     /**
@@ -5006,8 +5008,7 @@ const Clinic = {
             const shouldLoadData = forceReload || !hasLocalData || isDataStale;
             
             if (shouldLoadData && typeof GoogleIntegration !== 'undefined' && GoogleIntegration.sendRequest) {
-                // تحميل البيانات في الخلفية بدون حجب الواجهة
-                this.loadVisitsDataFromBackend().then(() => {
+                this.ensureVisitsDataLoaded(forceReload).then(() => {
                     // ✅ إعادة تطبيع البيانات بعد التحميل
                     this.ensureData();
                     // تحديث الواجهة بعد تحميل البيانات
@@ -5037,6 +5038,41 @@ const Clinic = {
                     </div>
                 `;
             }
+        }
+    },
+
+    async ensureVisitsDataLoaded(forceReload = false) {
+        try {
+            this.ensureData();
+            const hasLocalData = Array.isArray(AppState.appData.clinicVisits) && AppState.appData.clinicVisits.length > 0;
+            const lastSync = localStorage.getItem('clinic_last_sync');
+            const cacheAge = lastSync ? (Date.now() - parseInt(lastSync)) : Infinity;
+            const CACHE_DURATION = 10 * 60 * 1000;
+            const isDataStale = cacheAge >= CACHE_DURATION;
+            const shouldLoadData = forceReload || !hasLocalData || isDataStale || !this.state.visitsDataFullyLoaded;
+
+            if (!shouldLoadData) return false;
+
+            if (this.state.visitsDataLoadPromise) {
+                await this.state.visitsDataLoadPromise;
+                return true;
+            }
+
+            this.state.visitsDataLoadPromise = this.loadVisitsDataFromBackend()
+                .then(() => {
+                    this.state.visitsDataFullyLoaded = true;
+                    try { localStorage.setItem('clinic_visits_full_loaded', '1'); } catch (e) {}
+                    return true;
+                })
+                .finally(() => {
+                    this.state.visitsDataLoadPromise = null;
+                });
+
+            await this.state.visitsDataLoadPromise;
+            return true;
+        } catch (error) {
+            this.state.visitsDataFullyLoaded = false;
+            throw error;
         }
     },
 
@@ -10602,6 +10638,7 @@ const Clinic = {
         try {
             // التأكد من هيكلية البيانات
             this.ensureData();
+            this.state.visitsDataFullyLoaded = localStorage.getItem('clinic_visits_full_loaded') === '1';
 
             // التحقق من البيانات المحفوظة محلياً
             const lastSync = localStorage.getItem('clinic_last_sync');
@@ -10620,7 +10657,7 @@ const Clinic = {
 
             // ✅ تحسين سرعة التحميل: عدم انتظار syncDataFromServer في الخلفية
             // التحميل ينتهي فوراً بعد عرض الواجهة؛ جلب البيانات يتم في الخلفية ثم تحديث الواجهة
-            const shouldLoadData = isFirstLoad || !hasLocalData || cacheAge >= CACHE_DURATION;
+            const shouldLoadData = isFirstLoad || !hasLocalData || cacheAge >= CACHE_DURATION || !this.state.visitsDataFullyLoaded;
             
             if (shouldLoadData) {
                 Utils.safeLog('🔄 تحميل بيانات العيادة من قاعدة البيانات (في الخلفية)...');
@@ -10630,6 +10667,8 @@ const Clinic = {
                     'انتهت مهلة تحميل البيانات'
                 ).then(() => {
                     localStorage.setItem('clinic_last_sync', Date.now().toString());
+                    this.state.visitsDataFullyLoaded = true;
+                    try { localStorage.setItem('clinic_visits_full_loaded', '1'); } catch (e) {}
                     this.ensureData();
                     this.renderUI();
                     if (this.state && this.state.activeTab === 'visits') {
@@ -11029,6 +11068,8 @@ const Clinic = {
 
             // حفظ وقت آخر مزامنة
             localStorage.setItem('clinic_last_sync', Date.now().toString());
+            this.state.visitsDataFullyLoaded = true;
+            try { localStorage.setItem('clinic_visits_full_loaded', '1'); } catch (e) {}
 
             // ✅ إعادة تطبيع البيانات بعد المزامنة
             this.ensureData();
