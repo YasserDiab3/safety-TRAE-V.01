@@ -50,6 +50,9 @@ const MODULES_TO_LOAD = [
 function loadModule(moduleName) {
     return new Promise((resolve) => {
         const basePath = 'js/modules/modules/';
+        const moduleVersion = (typeof window !== 'undefined' && window.APP_MODULES_VERSION)
+            ? String(window.APP_MODULES_VERSION)
+            : '20260307-2';
         const log = (typeof Utils !== 'undefined' && Utils.safeLog) ? Utils.safeLog : console.log;
         const logError = (typeof Utils !== 'undefined' && Utils.safeError) ? Utils.safeError : console.error;
 
@@ -73,7 +76,7 @@ function loadModule(moduleName) {
         };
 
         const script = document.createElement('script');
-        script.src = `${basePath}${moduleName}.js`;
+        script.src = `${basePath}${moduleName}.js?v=${encodeURIComponent(moduleVersion)}`;
         script.async = false; // ✅ تعطيل async لتحسين التوافق مع file:// protocol
         script.defer = true; // استخدام defer بدلاً من async
         
