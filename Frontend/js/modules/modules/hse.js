@@ -7,6 +7,16 @@ const HSE = {
     currentView: 'dashboard', // dashboard, audits, non-conformities, corrective-actions, objectives, risk-assessments
     currentTab: 'dashboard',
 
+    /**
+     * الحصول على الترجمات
+     */
+    t(key, defaultText) {
+        if (typeof I18n !== 'undefined' && I18n.t) {
+            return I18n.t(key, defaultText);
+        }
+        return defaultText || key;
+    },
+
     async load() {
         // محاولة البحث عن القسم الصحيح
         let section = document.getElementById('hse-section');
@@ -104,19 +114,19 @@ const HSE = {
                 <div class="flex items-center justify-between flex-wrap gap-4">
                     <div>
                         <h1 class="section-title">
-                            <i class="fas fa-user-shield ml-3"></i>
-                            إدارة السلامة والصحة المهنية (HSE)
+                            <i class="fas fa-user-shield ml-3 rtl:ml-3 ltr:mr-3"></i>
+                            ${this.t('hse.title', 'إدارة السلامة والصحة المهنية (HSE)')}
                         </h1>
-                        <p class="section-subtitle">إدارة شاملة لأنشطة السلامة والصحة المهنية والبيئة</p>
+                        <p class="section-subtitle">${this.t('hse.subtitle', 'إدارة شاملة لأنشطة السلامة والصحة المهنية والبيئة')}</p>
                     </div>
                     <div class="flex gap-2">
                         <button id="hse-export-excel-btn" class="btn-success">
-                            <i class="fas fa-file-excel ml-2"></i>
-                            تصدير Excel
+                            <i class="fas fa-file-excel ml-2 rtl:ml-2 ltr:mr-2"></i>
+                            ${this.t('btn.exportExcel', 'تصدير Excel')}
                         </button>
                         <button id="hse-export-pdf-btn" class="btn-secondary">
-                            <i class="fas fa-file-pdf ml-2"></i>
-                            تصدير PDF
+                            <i class="fas fa-file-pdf ml-2 rtl:ml-2 ltr:mr-2"></i>
+                            ${this.t('btn.exportPDF', 'تصدير PDF')}
                         </button>
                     </div>
                 </div>
@@ -126,28 +136,28 @@ const HSE = {
             <div class="mt-6">
                 <div class="flex items-center gap-2 border-b border-gray-200" style="border-bottom: 2px solid #e5e7eb; flex-wrap: nowrap; overflow-x: auto; overflow-y: visible; min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box;">
                     <button class="hse-tab-btn active" data-tab="dashboard" onclick="HSE.switchTab('dashboard')" style="padding: 12px 20px; border: none; background: transparent; color: #6b7280; font-weight: 500; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; flex-shrink: 0; min-width: fit-content; white-space: nowrap; width: auto; max-width: none;">
-                        <i class="fas fa-chart-pie ml-2"></i>
-                        لوحة التحكم
+                        <i class="fas fa-chart-pie ml-2 rtl:ml-2 ltr:mr-2"></i>
+                        ${this.t('hse.tab.dashboard', 'لوحة التحكم')}
                     </button>
                     <button class="hse-tab-btn" data-tab="audits" onclick="HSE.switchTab('audits')" style="padding: 12px 20px; border: none; background: transparent; color: #6b7280; font-weight: 500; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; flex-shrink: 0; min-width: fit-content; white-space: nowrap; width: auto; max-width: none;">
-                        <i class="fas fa-clipboard-check ml-2"></i>
-                        التدقيقات
+                        <i class="fas fa-clipboard-check ml-2 rtl:ml-2 ltr:mr-2"></i>
+                        ${this.t('hse.tab.audits', 'التدقيقات')}
                     </button>
                     <button class="hse-tab-btn" data-tab="non-conformities" onclick="HSE.switchTab('non-conformities')" style="padding: 12px 20px; border: none; background: transparent; color: #6b7280; font-weight: 500; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; flex-shrink: 0; min-width: fit-content; white-space: nowrap; width: auto; max-width: none;">
-                        <i class="fas fa-exclamation-triangle ml-2"></i>
-                        عدم المطابقة
+                        <i class="fas fa-exclamation-triangle ml-2 rtl:ml-2 ltr:mr-2"></i>
+                        ${this.t('hse.tab.nonConformities', 'عدم المطابقة')}
                     </button>
                     <button class="hse-tab-btn" data-tab="corrective-actions" onclick="HSE.switchTab('corrective-actions')" style="padding: 12px 20px; border: none; background: transparent; color: #6b7280; font-weight: 500; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; flex-shrink: 0; min-width: fit-content; white-space: nowrap; width: auto; max-width: none;">
-                        <i class="fas fa-tools ml-2"></i>
-                        الإجراءات التصحيحية
+                        <i class="fas fa-tools ml-2 rtl:ml-2 ltr:mr-2"></i>
+                        ${this.t('hse.tab.correctiveActions', 'الإجراءات التصحيحية')}
                     </button>
                     <button class="hse-tab-btn" data-tab="objectives" onclick="HSE.switchTab('objectives')" style="padding: 12px 20px; border: none; background: transparent; color: #6b7280; font-weight: 500; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; flex-shrink: 0; min-width: fit-content; white-space: nowrap; width: auto; max-width: none;">
-                        <i class="fas fa-bullseye ml-2"></i>
-                        الأهداف
+                        <i class="fas fa-bullseye ml-2 rtl:ml-2 ltr:mr-2"></i>
+                        ${this.t('hse.tab.objectives', 'الأهداف')}
                     </button>
                     <button class="hse-tab-btn" data-tab="risk-assessments" onclick="HSE.switchTab('risk-assessments')" style="padding: 12px 20px; border: none; background: transparent; color: #6b7280; font-weight: 500; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; flex-shrink: 0; min-width: fit-content; white-space: nowrap; width: auto; max-width: none;">
-                        <i class="fas fa-shield-alt ml-2"></i>
-                        تقييمات المخاطر
+                        <i class="fas fa-shield-alt ml-2 rtl:ml-2 ltr:mr-2"></i>
+                        ${this.t('hse.tab.riskAssessments', 'تقييمات المخاطر')}
                     </button>
                 </div>
                 <style>
