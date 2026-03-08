@@ -52,7 +52,7 @@ function loadModule(moduleName) {
         const basePath = 'js/modules/modules/';
         const moduleVersion = (typeof window !== 'undefined' && window.APP_MODULES_VERSION)
             ? String(window.APP_MODULES_VERSION)
-            : '20260307-2';
+            : '20260308-1';
         const log = (typeof Utils !== 'undefined' && Utils.safeLog) ? Utils.safeLog : console.log;
         const logError = (typeof Utils !== 'undefined' && Utils.safeError) ? Utils.safeError : console.error;
 
@@ -231,7 +231,7 @@ function loadI18nManager() {
         const basePath = 'js/modules/';
         const moduleVersion = (typeof window !== 'undefined' && window.APP_MODULES_VERSION)
             ? String(window.APP_MODULES_VERSION)
-            : '20260307-2';
+            : '20260308-1';
             
         const script = document.createElement('script');
         script.src = `${basePath}i18n-manager.js?v=${encodeURIComponent(moduleVersion)}`;
