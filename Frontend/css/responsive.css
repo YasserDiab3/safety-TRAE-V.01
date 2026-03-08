@@ -214,18 +214,28 @@ body.app-active {
     min-height: 100vh;
     min-height: 100dvh;
     /* Dynamic viewport height for mobile */
-    margin-right: var(--sidebar-width);
     background: var(--bg-secondary);
-    transition: margin-right 0.3s ease;
+    transition: margin 0.3s ease;
     width: 100%;
     overflow-x: hidden;
     box-sizing: border-box;
+    
+    /* Default RTL */
+    margin-right: var(--sidebar-width);
+    margin-left: 0;
 }
 
-/* على الموبايل، إزالة margin-right */
+/* LTR App Shell */
+[dir="ltr"] .app-shell {
+    margin-left: var(--sidebar-width);
+    margin-right: 0;
+}
+
+/* على الموبايل، إزالة margin */
 @media (max-width: 1024px) {
     .app-shell {
         margin-right: 0 !important;
+        margin-left: 0 !important;
     }
 }
 
@@ -233,23 +243,38 @@ body.app-active {
 @media (min-width: 1025px) {
 
     /* القائمة الجانبية مخفية افتراضياً إلا إذا كانت مفتوحة */
+    /* RTL: Hide to Right */
     .sidebar:not(.open) {
         transform: translateX(100%) !important;
+    }
+    
+    /* LTR: Hide to Left */
+    [dir="ltr"] .sidebar:not(.open) {
+        transform: translateX(-100%) !important;
     }
 
     .sidebar.open {
         transform: translateX(0) !important;
     }
 
-    /* تعديل margin-right للـ app-shell بناءً على حالة القائمة */
+    /* تعديل margin للـ app-shell بناءً على حالة القائمة */
     .app-shell {
         margin-right: 0 !important;
-        transition: margin-right 0.3s ease;
+        margin-left: 0 !important;
+        transition: margin 0.3s ease;
     }
 
     /* عندما تكون القائمة مفتوحة، نضيف margin للـ app-shell */
+    /* RTL */
     .sidebar.open~.app-shell {
         margin-right: var(--sidebar-width) !important;
+        margin-left: 0 !important;
+    }
+    
+    /* LTR */
+    [dir="ltr"] .sidebar.open~.app-shell {
+        margin-left: var(--sidebar-width) !important;
+        margin-right: 0 !important;
     }
 
     /* إظهار زر القائمة على سطح المكتب */

@@ -3420,12 +3420,19 @@ window.UI = {
         const header = document.getElementById('company-logo-header');
         if (!header) return;
 
+        const isRTL = document.documentElement.dir === 'rtl';
+
         // على الشاشات الكبيرة (> 1024px)، إذا كانت القائمة مفتوحة، الهيدر يكون بجانبها
         // وإذا كانت مغلقة، يكون كامل العرض
         if (window.innerWidth > 1024) {
             if (sidebarOpen) {
-                header.style.right = 'var(--sidebar-width)';
-                header.style.left = '0';
+                if (isRTL) {
+                    header.style.right = 'var(--sidebar-width)';
+                    header.style.left = '0';
+                } else {
+                    header.style.left = 'var(--sidebar-width)';
+                    header.style.right = '0';
+                }
             } else {
                 header.style.right = '0';
                 header.style.left = '0';
@@ -5488,10 +5495,17 @@ window.UI = {
             return; // الأيقونات موجودة بالفعل
         }
 
+        // التحقق من اتجاه الصفحة
+        const isRTL = document.documentElement.dir === 'rtl';
+
         // إنشاء حاوية للأيقونات
         const iconsContainer = document.createElement('div');
         iconsContainer.className = 'navigation-icons-container';
-        iconsContainer.style.cssText = 'position: absolute; right: 0; top: 0; display: flex; gap: 0.5rem; align-items: center; z-index: 1000; visibility: visible; opacity: 1;';
+        if (isRTL) {
+            iconsContainer.style.cssText = 'position: absolute; right: 0; top: 0; display: flex; gap: 0.5rem; align-items: center; z-index: 1000; visibility: visible; opacity: 1;';
+        } else {
+            iconsContainer.style.cssText = 'position: absolute; left: 0; top: 0; display: flex; gap: 0.5rem; align-items: center; z-index: 1000; visibility: visible; opacity: 1;';
+        }
 
         // إنشاء أيقونة القائمة الرئيسية
         const homeIcon = document.createElement('button');
@@ -5559,11 +5573,21 @@ window.UI = {
             sectionHeader.style.position = 'relative';
         }
 
-        // إضافة padding-right للـ section-header لتفادي تداخل الأيقونات مع المحتوى
-        const computedPadding = window.getComputedStyle(sectionHeader).paddingRight;
-        const paddingValue = parseInt(computedPadding) || 0;
-        if (paddingValue < 120) {
-            sectionHeader.style.paddingRight = '120px';
+        // إضافة padding للـ section-header لتفادي تداخل الأيقونات مع المحتوى
+        if (isRTL) {
+            const computedPadding = window.getComputedStyle(sectionHeader).paddingRight;
+            const paddingValue = parseInt(computedPadding) || 0;
+            if (paddingValue < 120) {
+                sectionHeader.style.paddingRight = '120px';
+                sectionHeader.style.paddingLeft = ''; // Reset
+            }
+        } else {
+            const computedPadding = window.getComputedStyle(sectionHeader).paddingLeft;
+            const paddingValue = parseInt(computedPadding) || 0;
+            if (paddingValue < 120) {
+                sectionHeader.style.paddingLeft = '120px';
+                sectionHeader.style.paddingRight = ''; // Reset
+            }
         }
 
         // التأكد من أن الأيقونات مرئية
@@ -7993,19 +8017,12 @@ window.UI = {
         const sidebar = document.querySelector('.sidebar');
         if (sidebar) {
             sidebar.dir = isRTL ? 'rtl' : 'ltr';
-            // تحديث موضع Sidebar
+            // CSS handles positioning based on [dir] attribute now
+            // We just toggle classes for specific RTL/LTR styling if needed
             if (isRTL) {
-                sidebar.style.right = '0';
-                sidebar.style.left = 'auto';
-                sidebar.style.borderLeft = '3px solid #FFC72C';
-                sidebar.style.borderRight = 'none';
                 sidebar.classList.remove('sidebar-ltr');
                 sidebar.classList.add('sidebar-rtl');
             } else {
-                sidebar.style.left = '0';
-                sidebar.style.right = 'auto';
-                sidebar.style.borderRight = '3px solid #FFC72C';
-                sidebar.style.borderLeft = 'none';
                 sidebar.classList.remove('sidebar-rtl');
                 sidebar.classList.add('sidebar-ltr');
             }
@@ -8017,115 +8034,16 @@ window.UI = {
             navigation.dir = isRTL ? 'rtl' : 'ltr';
         }
 
-        // تحديث موضع app-shell
-        const appShell = document.querySelector('.app-shell');
-        if (appShell) {
-            if (isRTL) {
-                appShell.style.marginRight = 'var(--sidebar-width)';
-                appShell.style.marginLeft = '0';
-            } else {
-                appShell.style.marginLeft = 'var(--sidebar-width)';
-                appShell.style.marginRight = '0';
-            }
-        }
+        // app-shell margins are now handled by CSS based on [dir]
 
-        // تحديث nav-item borders
-        const navItems = document.querySelectorAll('.nav-item');
-        navItems.forEach(item => {
-            // في RTL: الحد على اليمين (الجانب الأيمن من الشاشة)
-            // في LTR: الحد على اليسار (الجانب الأيسر من الشاشة)
-            if (isRTL) {
-                item.style.borderRight = '4px solid transparent';
-                item.style.borderLeft = 'none';
-                item.style.borderRadius = '8px 0 0 8px';
-            } else {
-                item.style.borderLeft = '4px solid transparent';
-                item.style.borderRight = 'none';
-                item.style.borderRadius = '0 8px 8px 0';
-            }
-        });
-
-        // تحديث أيقونات nav-item
-        // الأيقونة تبقى دائماً في نفس الموضع البصري (الجانب الأيمن) كما في العربية
-        navItems.forEach(item => {
-            const icon = item.querySelector('i');
-            const textSpan = item.querySelector('span');
-            
-            // إزالة أي order styles سابقة
-            if (icon) {
-                icon.style.order = '';
-                // في RTL: الأيقونة على اليمين (margin-left)
-                // في LTR: الأيقونة على اليمين أيضاً (margin-right بعد reverse)
-                if (isRTL) {
-                    icon.style.marginLeft = '1rem';
-                    icon.style.marginRight = '0';
-                } else {
-                    icon.style.marginRight = '1rem';
-                    icon.style.marginLeft = '0';
-                }
-            }
-            
-            if (textSpan) {
-                textSpan.style.order = '';
-                textSpan.style.flex = '1';
-                textSpan.style.textAlign = isRTL ? 'right' : 'left';
-            }
-            
-            // تحديث محاذاة العنصر نفسه
-            // الأيقونة تبقى على اليمين دائماً (كما في العربية)
-            item.style.textAlign = isRTL ? 'right' : 'left';
-            item.style.justifyContent = 'flex-start'; // دائماً flex-start
-            // في RTL: row (الأيقونة على اليمين، النص على اليسار)
-            // في LTR: row-reverse (الأيقونة على اليمين، النص على اليسار)
-            item.style.flexDirection = isRTL ? 'row' : 'row-reverse';
-        });
+        // nav-item borders and icons are now handled by CSS based on [dir]
         
-        // إضافة CSS ديناميكي لتأثير hover و ::before
+        // إزالة CSS ديناميكي قديم لتأثير hover و ::before إذا كان موجوداً
         const styleId = 'nav-item-hover-ltr-fix';
         let styleElement = document.getElementById(styleId);
-        if (!styleElement) {
-            styleElement = document.createElement('style');
-            styleElement.id = styleId;
-            document.head.appendChild(styleElement);
+        if (styleElement) {
+            styleElement.remove();
         }
-        styleElement.textContent = `
-            /* تأثير hover */
-            [dir="ltr"] .nav-item:hover {
-                transform: translateX(3px) !important;
-            }
-            [dir="rtl"] .nav-item:hover {
-                transform: translateX(-3px) !important;
-            }
-            
-            /* تأثير ::before */
-            [dir="ltr"] .nav-item::before {
-                right: auto !important;
-                left: 0 !important;
-            }
-            [dir="rtl"] .nav-item::before {
-                left: auto !important;
-                right: 0 !important;
-            }
-            
-            /* تأثير border في hover */
-            [dir="ltr"] .nav-item:hover {
-                border-right-color: transparent !important;
-                border-left-color: #FFC72C !important;
-            }
-            [dir="rtl"] .nav-item:hover {
-                border-left-color: transparent !important;
-                border-right-color: #FFC72C !important;
-            }
-            
-            [dir="ltr"] .nav-item.active {
-                border-right-color: transparent !important;
-                border-left-color: #FFC72C !important;
-            }
-            [dir="rtl"] .nav-item.active {
-                border-left-color: transparent !important;
-                border-right-color: #FFC72C !important;
-            }
-        `;
 
         // تحديث نص الزر
         const langText = document.getElementById('current-lang-text');
@@ -8334,6 +8252,11 @@ window.UI = {
             if (typeof window.dispatchEvent === 'function') {
                 window.dispatchEvent(new Event('resize'));
             }
+            
+            // تحديث موقع هيدر الشعار
+            const sidebar = document.querySelector('.sidebar');
+            const isOpen = sidebar && sidebar.classList.contains('open');
+            this.updateCompanyLogoHeaderPosition(isOpen);
         } catch (e) { /* تجاهل */ }
 
         // عرض الإشعار فقط إذا لم تكن هذه تهيئة أولية وكانت الواجهة جاهزة

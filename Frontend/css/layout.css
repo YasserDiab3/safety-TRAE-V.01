@@ -14,13 +14,24 @@
     overflow-x: hidden;
     box-shadow: 4px 0 20px rgba(0, 56, 101, 0.3);
     z-index: 1000;
-    right: 0;
     top: 0;
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease;
-    border-left: 3px solid #FFC72C;
     -webkit-overflow-scrolling: touch;
-    /* إزالة will-change لمنع memory leaks - يتم إضافتها ديناميكياً عند الحاجة */
-    /* will-change: transform; */
+    
+    /* Default RTL */
+    right: 0;
+    left: auto;
+    border-left: 3px solid #FFC72C;
+    border-right: none;
+}
+
+/* LTR Support */
+[dir="ltr"] .sidebar {
+    left: 0;
+    right: auto;
+    border-right: 3px solid #FFC72C;
+    border-left: none;
+    box-shadow: -4px 0 20px rgba(0, 56, 101, 0.3);
 }
 
 /* User Profile */
@@ -83,9 +94,7 @@
     color: rgba(255, 255, 255, 0.85);
     text-decoration: none;
     transition: all 0.3s ease;
-    border-right: 4px solid transparent;
     margin: 0.25rem 0.5rem;
-    border-radius: 8px 0 0 8px;
     position: relative;
     overflow: hidden;
     min-height: 48px;
@@ -94,17 +103,38 @@
     -webkit-tap-highlight-color: rgba(255, 199, 44, 0.2);
     user-select: none;
     -webkit-user-select: none;
+    
+    /* Default RTL */
+    border-right: 4px solid transparent;
+    border-left: none;
+    border-radius: 8px 0 0 8px;
+}
+
+/* LTR Support for Nav Item */
+[dir="ltr"] .nav-item {
+    border-left: 4px solid transparent;
+    border-right: none;
+    border-radius: 0 8px 8px 0;
 }
 
 .nav-item::before {
     content: '';
     position: absolute;
-    right: 0;
     top: 0;
     width: 0;
     height: 100%;
     background: rgba(255, 199, 44, 0.1);
     transition: width 0.3s ease;
+    
+    /* Default RTL */
+    right: 0;
+    left: auto;
+}
+
+/* LTR Support for Nav Item Hover Effect */
+[dir="ltr"] .nav-item::before {
+    left: 0;
+    right: auto;
 }
 
 .nav-item:hover::before,
@@ -114,17 +144,35 @@
 
 .nav-item i {
     width: 24px;
-    margin-left: 1rem;
     font-size: 1.125rem;
     transition: transform 0.3s ease, color 0.3s ease;
     color: rgba(255, 255, 255, 0.9);
+    
+    /* Default RTL */
+    margin-left: 1rem;
+    margin-right: 0;
+}
+
+/* LTR Support for Icon Margin */
+[dir="ltr"] .nav-item i {
+    margin-right: 1rem;
+    margin-left: 0;
 }
 
 .nav-item:hover {
     background: rgba(255, 255, 255, 0.08);
     color: white;
-    border-right-color: #FFC72C;
     transform: translateX(-3px);
+    
+    /* Default RTL */
+    border-right-color: #FFC72C;
+}
+
+/* LTR Hover Transform & Border */
+[dir="ltr"] .nav-item:hover {
+    transform: translateX(3px);
+    border-left-color: #FFC72C;
+    border-right-color: transparent;
 }
 
 .nav-item:hover i {
@@ -135,9 +183,19 @@
 .nav-item.active {
     background: linear-gradient(90deg, rgba(255, 199, 44, 0.2) 0%, rgba(255, 199, 44, 0.05) 100%);
     color: white;
-    border-right-color: #FFC72C;
     font-weight: 600;
     box-shadow: -2px 0 10px rgba(255, 199, 44, 0.3);
+    
+    /* Default RTL */
+    border-right-color: #FFC72C;
+}
+
+/* LTR Active State */
+[dir="ltr"] .nav-item.active {
+    background: linear-gradient(-90deg, rgba(255, 199, 44, 0.2) 0%, rgba(255, 199, 44, 0.05) 100%);
+    border-left-color: #FFC72C;
+    border-right-color: transparent;
+    box-shadow: 2px 0 10px rgba(255, 199, 44, 0.3);
 }
 
 .nav-item.active i {
@@ -185,9 +243,18 @@
 }
 
 .logout-btn i {
-    margin-left: 0.75rem;
     position: relative;
     z-index: 1;
+    
+    /* Default RTL */
+    margin-left: 0.75rem;
+    margin-right: 0;
+}
+
+/* LTR Logout Icon */
+[dir="ltr"] .logout-btn i {
+    margin-right: 0.75rem;
+    margin-left: 0;
 }
 
 .logout-btn span {
