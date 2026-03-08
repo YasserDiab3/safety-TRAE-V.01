@@ -22,313 +22,174 @@
 
     log('🚀 تحميل login-init-fixed.js...');
 
-    // ===== مزامنة المستخدمين قبل تسجيل الدخول (إعداد المزامنة) =====
-    const LoginSyncSetup = (function () {
-        const STORAGE_KEY = 'hse_google_config';
-        const MODAL_ID = 'login-sync-settings-modal';
-
-        function getDefaultGoogleConfig() {
-            return {
-                appsScript: { enabled: true, scriptUrl: 'https://script.google.com/macros/s/AKfycbyXvHP2gsfzPSVvurI_MH1kIYf7vVGBYK3m9fv26QPzv-eoD1d7tiLJPYjecyf2YJNSBw/exec' },
-                sheets: { enabled: true, spreadsheetId: '1EanavJ2OodOmq8b1GagSj8baa-KF-o4mVme_Jlwmgxc', apiKey: '' },
-                maps: { enabled: true, apiKey: '' }
-            };
+    // ===== إعداد محدد اللغة (Language Selector) =====
+    const LanguageSelectorSetup = (function () {
+        function setLanguage(lang) {
+            if (lang !== 'ar' && lang !== 'en') return;
+            
+            // حفظ التفضيل (using standard key 'language' for compatibility)
+            localStorage.setItem('language', lang);
+            
+            // تحديث الواجهة
+            updateUI(lang);
         }
 
-        function mergeGoogleConfig(base, override) {
-            const b = base || getDefaultGoogleConfig();
-            const o = override || {};
-            return {
-                appsScript: Object.assign({}, b.appsScript || {}, o.appsScript || {}),
-                sheets: Object.assign({}, b.sheets || {}, o.sheets || {}),
-                maps: Object.assign({}, b.maps || {}, o.maps || {})
-            };
-        }
+        function updateUI(lang) {
+            const isRTL = lang === 'ar';
+            const html = document.documentElement;
+            const body = document.body;
+            
+            // تحديث اتجاه الصفحة
+            html.setAttribute('lang', lang);
+            html.setAttribute('dir', isRTL ? 'rtl' : 'ltr');
+            body.setAttribute('dir', isRTL ? 'rtl' : 'ltr');
 
-        function readStoredGoogleConfig() {
-            let cfg = getDefaultGoogleConfig();
-            try {
-                if (typeof window !== 'undefined' && window.AppState && window.AppState.googleConfig) {
-                    cfg = mergeGoogleConfig(cfg, window.AppState.googleConfig);
-                }
-            } catch (e) { /* ignore */ }
-
-            try {
-                const raw = localStorage.getItem(STORAGE_KEY);
-                if (raw) {
-                    const parsed = JSON.parse(raw);
-                    cfg = mergeGoogleConfig(cfg, parsed);
-                }
-            } catch (e) { /* ignore */ }
-
-            return cfg;
-        }
-
-        function persistGoogleConfig(cfg) {
-            try {
-                if (typeof window !== 'undefined' && window.AppState) {
-                    window.AppState.googleConfig = cfg;
-                }
-            } catch (e) { /* ignore */ }
-
-            try {
-                if (typeof window !== 'undefined' && window.DataManager && typeof window.DataManager.saveGoogleConfig === 'function') {
-                    // DataManager.saveGoogleConfig يقرأ من AppState.googleConfig
-                    window.DataManager.saveGoogleConfig();
-                    return true;
-                }
-            } catch (e) { /* ignore */ }
-
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-                return true;
-            } catch (e) {
-                return false;
-            }
-        }
-
-        function isValidAppsScriptUrl(url) {
-            const u = String(url || '').trim();
-            if (!u) return false;
-            try {
-                if (typeof window !== 'undefined' &&
-                    window.GoogleIntegration &&
-                    typeof window.GoogleIntegration.isValidGoogleAppsScriptUrl === 'function') {
-                    return !!window.GoogleIntegration.isValidGoogleAppsScriptUrl(u);
-                }
-            } catch (e) { /* ignore */ }
-
-            // fallback بسيط
-            if (!/^https:\/\/script\.google\.com\//i.test(u)) return false;
-            if (!/\/exec(\?|#|$)/i.test(u)) return false;
-            return true;
-        }
-
-        function isValidSpreadsheetId(id) {
-            const v = String(id || '').trim();
-            if (!v) return false;
-            if (v === 'YOUR_SPREADSHEET_ID_HERE') return false;
-            // غالباً أحرف/أرقام/شرطة/underscore
-            return /^[a-zA-Z0-9-_]{15,}$/.test(v);
-        }
-
-        function notify(type, msg) {
-            try {
-                if (typeof window !== 'undefined' && window.Notification && typeof window.Notification[type] === 'function') {
-                    window.Notification[type](msg);
-                    return;
-                }
-            } catch (e) { /* ignore */ }
-            try { alert(msg); } catch (e) { /* ignore */ }
-        }
-
-        function setModalStatus(text, kind = 'info') {
-            const el = document.getElementById('login-sync-settings-status');
-            if (!el) return;
-            el.style.display = 'block';
-            el.classList.remove('text-green-700', 'text-red-700', 'text-yellow-700', 'text-gray-700');
-            if (kind === 'success') el.classList.add('text-green-700');
-            else if (kind === 'error') el.classList.add('text-red-700');
-            else if (kind === 'warning') el.classList.add('text-yellow-700');
-            else el.classList.add('text-gray-700');
-            el.textContent = text;
-        }
-
-        function closeModal() {
-            const overlay = document.getElementById(MODAL_ID);
-            if (overlay) {
-                overlay.style.display = 'none';
-            }
-        }
-
-        function ensureModal() {
-            let overlay = document.getElementById(MODAL_ID);
-            if (overlay) return overlay;
-
-            overlay = document.createElement('div');
-            overlay.id = MODAL_ID;
-            overlay.className = 'modal-overlay';
-            overlay.style.display = 'none';
-            overlay.setAttribute('role', 'dialog');
-            overlay.setAttribute('aria-modal', 'true');
-            overlay.setAttribute('aria-label', 'إعداد المزامنة');
-
-            overlay.innerHTML = `
-                <div class="modal-content" style="max-width: 560px;">
-                    <div class="modal-header">
-                        <div class="modal-title">إعداد المزامنة</div>
-                        <button type="button" class="modal-close" id="login-sync-settings-close" aria-label="إغلاق">×</button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    رابط Google Apps Script (scriptUrl)
-                                </label>
-                                <input id="login-sync-script-url" type="url" class="form-input" dir="ltr"
-                                    placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
-                                <p class="text-xs text-gray-500 mt-2">مهم: يجب أن ينتهي الرابط بـ <b>/exec</b> وأن يكون الـ Deploy مضبوط على Anyone.</p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    معرف Google Sheet (spreadsheetId)
-                                </label>
-                                <input id="login-sync-spreadsheet-id" type="text" class="form-input" dir="ltr"
-                                    placeholder="مثال: 1AbC...XyZ" autocomplete="off">
-                                <p class="text-xs text-gray-500 mt-2">يمكنك نسخه من رابط Google Sheets بين <b>/d/</b> و <b>/edit</b>.</p>
-                            </div>
-                            <div id="login-sync-settings-status" class="text-sm text-gray-700" style="display:none;"></div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn-primary" id="login-sync-settings-save">
-                            حفظ + مزامنة المستخدمين
-                        </button>
-                        <button type="button" class="btn-secondary" id="login-sync-settings-cancel">
-                            إلغاء
-                        </button>
-                    </div>
-                </div>
-            `;
-
-            document.body.appendChild(overlay);
-
-            // Close handlers
-            overlay.addEventListener('click', function (e) {
-                if (e.target === overlay) closeModal();
-            }, true);
-
-            document.addEventListener('keydown', function (e) {
-                if (e.key === 'Escape') {
-                    const o = document.getElementById(MODAL_ID);
-                    if (o && o.style.display !== 'none') closeModal();
-                }
-            }, true);
-
-            return overlay;
-        }
-
-        function openModal() {
-            const overlay = ensureModal();
-            const cfg = readStoredGoogleConfig();
-
-            const scriptInput = overlay.querySelector('#login-sync-script-url');
-            const sheetInput = overlay.querySelector('#login-sync-spreadsheet-id');
-            if (scriptInput) scriptInput.value = String(cfg.appsScript?.scriptUrl || '');
-            if (sheetInput) sheetInput.value = String(cfg.sheets?.spreadsheetId || '');
-
-            // reset status
-            const status = overlay.querySelector('#login-sync-settings-status');
-            if (status) status.style.display = 'none';
-
-            overlay.style.display = 'flex';
-            setTimeout(() => {
-                try { scriptInput && scriptInput.focus(); } catch (e) { /* ignore */ }
-            }, 50);
-        }
-
-        async function saveAndSyncUsers() {
-            const overlay = ensureModal();
-            const saveBtn = overlay.querySelector('#login-sync-settings-save');
-            const scriptInput = overlay.querySelector('#login-sync-script-url');
-            const sheetInput = overlay.querySelector('#login-sync-spreadsheet-id');
-
-            const scriptUrl = String(scriptInput?.value || '').trim();
-            const spreadsheetId = String(sheetInput?.value || '').trim();
-
-            if (!isValidAppsScriptUrl(scriptUrl)) {
-                setModalStatus('يرجى إدخال رابط Google Apps Script صحيح (ينتهي بـ /exec).', 'error');
-                try { scriptInput && scriptInput.focus(); } catch (e) { /* ignore */ }
-                return;
-            }
-            if (!isValidSpreadsheetId(spreadsheetId)) {
-                setModalStatus('يرجى إدخال spreadsheetId صحيح.', 'error');
-                try { sheetInput && sheetInput.focus(); } catch (e) { /* ignore */ }
-                return;
-            }
-
-            const cfg = readStoredGoogleConfig();
-            cfg.appsScript.enabled = true;
-            cfg.appsScript.scriptUrl = scriptUrl;
-            cfg.sheets.enabled = true;
-            cfg.sheets.spreadsheetId = spreadsheetId;
-
-            const persisted = persistGoogleConfig(cfg);
-            if (!persisted) {
-                setModalStatus('تعذر حفظ الإعدادات على هذا الجهاز (localStorage غير متاح).', 'error');
-                return;
-            }
-
-            // Sync users (without logging in)
-            if (saveBtn) {
-                saveBtn.disabled = true;
-                saveBtn.dataset.originalText = saveBtn.innerHTML;
-                saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin ml-2"></i> جاري المزامنة...';
-            }
-
-            setModalStatus('جاري مزامنة المستخدمين من Google Sheets...', 'info');
-            notify('info', 'جاري مزامنة المستخدمين...');
-
-            try {
-                if (typeof window === 'undefined' || !window.GoogleIntegration || typeof window.GoogleIntegration.syncUsers !== 'function') {
-                    throw new Error('GoogleIntegration غير جاهز بعد. انتظر ثواني ثم حاول مرة أخرى.');
-                }
-
-                const ok = await window.GoogleIntegration.syncUsers(true);
-                if (ok) {
-                    // تعطيل bootstrap بعد نجاح المزامنة إن لزم
-                    try {
-                        if (window.Auth && typeof window.Auth.handleUsersSyncSuccess === 'function') {
-                            window.Auth.handleUsersSyncSuccess();
-                        }
-                    } catch (e) { /* ignore */ }
-
-                    const count = Array.isArray(window.AppState?.appData?.users) ? window.AppState.appData.users.length : 0;
-                    setModalStatus(`✅ تمت مزامنة المستخدمين بنجاح. عدد المستخدمين: ${count}`, 'success');
-                    notify('success', `✅ تمت مزامنة المستخدمين بنجاح (${count})`);
+            // تحديث الأزرار
+            const btnEn = document.getElementById('lang-en-login');
+            const btnAr = document.getElementById('lang-ar-login');
+            
+            if (btnEn && btnAr) {
+                if (lang === 'en') {
+                    // Active English
+                    btnEn.classList.remove('bg-white', 'text-gray-900', 'hover:bg-gray-100', 'hover:text-blue-700');
+                    btnEn.classList.add('bg-blue-50', 'text-blue-700', 'hover:bg-blue-100');
+                    
+                    // Inactive Arabic
+                    btnAr.classList.remove('bg-blue-50', 'text-blue-700', 'hover:bg-blue-100');
+                    btnAr.classList.add('bg-white', 'text-gray-900', 'hover:bg-gray-100', 'hover:text-blue-700');
                 } else {
-                    setModalStatus('⚠️ لم تكتمل المزامنة (تحقق من الإعدادات/الاتصال).', 'warning');
-                    notify('warning', '⚠️ لم تكتمل مزامنة المستخدمين.');
+                    // Active Arabic
+                    btnAr.classList.remove('bg-white', 'text-gray-900', 'hover:bg-gray-100', 'hover:text-blue-700');
+                    btnAr.classList.add('bg-blue-50', 'text-blue-700', 'hover:bg-blue-100');
+                    
+                    // Inactive English
+                    btnEn.classList.remove('bg-blue-50', 'text-blue-700', 'hover:bg-blue-100');
+                    btnEn.classList.add('bg-white', 'text-gray-900', 'hover:bg-gray-100', 'hover:text-blue-700');
                 }
-            } catch (err) {
-                const msg = err?.message || String(err || 'خطأ غير معروف');
-                setModalStatus(`❌ فشلت المزامنة: ${msg}`, 'error');
-                notify('error', `❌ فشلت المزامنة: ${msg}`);
-            } finally {
-                if (saveBtn) {
-                    saveBtn.disabled = false;
-                    saveBtn.innerHTML = saveBtn.dataset.originalText || 'حفظ + مزامنة المستخدمين';
+            }
+            
+            // تحديث النصوص
+            updateLoginTexts(lang);
+        }
+        
+        function updateLoginTexts(lang) {
+            const texts = {
+                ar: {
+                    title: 'نظام إدارة السلامة والصحة المهنية',
+                    company: 'الشركة العالمية للانتاج والتصنيع الزراعي',
+                    emailLabel: 'البريد الإلكتروني',
+                    passwordLabel: 'كلمة المرور',
+                    rememberMe: 'تذكرني',
+                    forgotPassword: 'نسيت كلمة المرور؟',
+                    loginBtn: 'تسجيل الدخول',
+                    helpBtn: 'مساعدة / Help',
+                    emailPlaceholder: 'example@americana.com',
+                    passwordPlaceholder: '••••••••'
+                },
+                en: {
+                    title: 'HSE Management System',
+                    company: 'International Company for Agricultural Production & Processing',
+                    emailLabel: 'Email Address',
+                    passwordLabel: 'Password',
+                    rememberMe: 'Remember Me',
+                    forgotPassword: 'Forgot Password?',
+                    loginBtn: 'Login',
+                    helpBtn: 'Help / مساعدة',
+                    emailPlaceholder: 'example@americana.com',
+                    passwordPlaceholder: '••••••••'
                 }
+            };
+            
+            const t = texts[lang];
+            
+            // Helper to safe update
+            const setText = (id, text) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = text;
+            };
+            
+            const setPlaceholder = (id, text) => {
+                const el = document.getElementById(id);
+                if (el) el.placeholder = text;
+            };
+            
+            setText('login-title', t.title);
+            setText('login-company-name', t.company);
+            
+            // Labels (Text Node update)
+            try {
+                const emailLabel = document.querySelector('label[for="username"]');
+                if (emailLabel) {
+                    // Find the text node (usually the last node or check type)
+                    for (let i = 0; i < emailLabel.childNodes.length; i++) {
+                        if (emailLabel.childNodes[i].nodeType === 3 && emailLabel.childNodes[i].textContent.trim().length > 0) {
+                            emailLabel.childNodes[i].textContent = ' ' + t.emailLabel;
+                            break;
+                        }
+                    }
+                }
+                
+                const passLabel = document.querySelector('label[for="password"]');
+                if (passLabel) {
+                    for (let i = 0; i < passLabel.childNodes.length; i++) {
+                        if (passLabel.childNodes[i].nodeType === 3 && passLabel.childNodes[i].textContent.trim().length > 0) {
+                            passLabel.childNodes[i].textContent = ' ' + t.passwordLabel;
+                            break;
+                        }
+                    }
+                }
+
+                const rememberLabel = document.querySelector('label input[name="remember"] + span');
+                if (rememberLabel) rememberLabel.textContent = t.rememberMe;
+                
+                setText('forgot-password-link', t.forgotPassword);
+                
+                // Buttons with icons
+                const loginBtn = document.querySelector('button[type="submit"]');
+                if (loginBtn) {
+                     for (let i = 0; i < loginBtn.childNodes.length; i++) {
+                        if (loginBtn.childNodes[i].nodeType === 3 && loginBtn.childNodes[i].textContent.trim().length > 0) {
+                            loginBtn.childNodes[i].textContent = ' ' + t.loginBtn;
+                            break;
+                        }
+                    }
+                }
+                
+                const helpBtn = document.getElementById('help-btn');
+                if (helpBtn) {
+                     for (let i = 0; i < helpBtn.childNodes.length; i++) {
+                        if (helpBtn.childNodes[i].nodeType === 3 && helpBtn.childNodes[i].textContent.trim().length > 0) {
+                            helpBtn.childNodes[i].textContent = ' ' + t.helpBtn;
+                            break;
+                        }
+                    }
+                }
+                
+                setPlaceholder('username', t.emailPlaceholder);
+                setPlaceholder('password', t.passwordPlaceholder);
+            } catch(e) {
+                console.warn('Error updating login texts', e);
             }
         }
 
-        function bindModalButtonsOnce() {
-            const overlay = ensureModal();
-            if (overlay.dataset.bound === 'true') return;
-
-            const closeBtn = overlay.querySelector('#login-sync-settings-close');
-            const cancelBtn = overlay.querySelector('#login-sync-settings-cancel');
-            const saveBtn = overlay.querySelector('#login-sync-settings-save');
-
-            if (closeBtn) closeBtn.addEventListener('click', function (e) { e.preventDefault(); closeModal(); }, true);
-            if (cancelBtn) cancelBtn.addEventListener('click', function (e) { e.preventDefault(); closeModal(); }, true);
-            if (saveBtn) saveBtn.addEventListener('click', function (e) { e.preventDefault(); saveAndSyncUsers(); }, true);
-
-            overlay.dataset.bound = 'true';
+        function init() {
+            const savedLang = localStorage.getItem('language') || 'ar';
+            updateUI(savedLang);
+            
+            const btnEn = document.getElementById('lang-en-login');
+            const btnAr = document.getElementById('lang-ar-login');
+            
+            if (btnEn) btnEn.addEventListener('click', (e) => { e.preventDefault(); setLanguage('en'); });
+            if (btnAr) btnAr.addEventListener('click', (e) => { e.preventDefault(); setLanguage('ar'); });
         }
 
-        function open() {
-            bindModalButtonsOnce();
-            openModal();
-        }
-
-        return { open };
+        return { init, setLanguage };
     })();
 
-    // جعل LoginSyncSetup متاحاً بشكل global لضمان عمله
+    // جعل LanguageSelectorSetup متاحاً بشكل global
     if (typeof window !== 'undefined') {
-        window.LoginSyncSetup = LoginSyncSetup;
-        log('✅ تم تسجيل LoginSyncSetup في window');
+        window.LanguageSelectorSetup = LanguageSelectorSetup;
+        log('✅ تم تسجيل LanguageSelectorSetup في window');
     }
 
     // منع ظهور بيانات الدخول في رابط الموقع (إن وُجدت بالـ query params)
@@ -502,42 +363,12 @@ Yasser.diab@icapp.com.eg`;
         return true;
     }
 
-    function setupSyncSettingsButton() {
-        const btn = document.getElementById('sync-settings-btn');
-        if (!btn) {
-            log('⚠️ زر إعداد المزامنة غير موجود');
-            return false;
-        }
-        if (btn.dataset.handlerBound === 'true') {
-            log('ℹ️ زر إعداد المزامنة مفعّل بالفعل');
+    function setupLanguageSelector() {
+        if (typeof window.LanguageSelectorSetup !== 'undefined' && typeof window.LanguageSelectorSetup.init === 'function') {
+            window.LanguageSelectorSetup.init();
             return true;
         }
-
-        btn.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            
-            log('🖱️ تم النقر على زر إعداد المزامنة');
-            
-            try {
-                // استخدام window.LoginSyncSetup مباشرة
-                if (typeof window !== 'undefined' && window.LoginSyncSetup && typeof window.LoginSyncSetup.open === 'function') {
-                    log('✅ فتح نافذة إعداد المزامنة...');
-                    window.LoginSyncSetup.open();
-                } else {
-                    log('❌ LoginSyncSetup غير متاح');
-                    throw new Error('LoginSyncSetup غير متاح بعد. انتظر قليلاً ثم حاول مرة أخرى.');
-                }
-            } catch (err) {
-                console.error('❌ خطأ في فتح نافذة إعداد المزامنة:', err);
-                alert('تعذر فتح نافذة إعداد المزامنة. يرجى تحديث الصفحة.\n\n' + (err?.message || ''));
-            }
-        }, true);
-
-        btn.dataset.handlerBound = 'true';
-        log('✅ تم تفعيل زر إعداد المزامنة');
-        return true;
+        return false;
     }
     
     // محاولة التهيئة الفورية
@@ -545,13 +376,9 @@ Yasser.diab@icapp.com.eg`;
         const passwordOk = setupPasswordToggle();
         const forgotOk = setupForgotPassword();
         const helpOk = setupHelpButton();
-        const syncOk = setupSyncSettingsButton();
+        const langOk = setupLanguageSelector();
         
-        // زر إعداد المزامنة جديد وقد لا يكون موجوداً في نسخ قديمة
-        const syncBtnExists = !!document.getElementById('sync-settings-btn');
-        const syncReady = syncOk || !syncBtnExists;
-
-        if (passwordOk && forgotOk && helpOk && syncReady) {
+        if (passwordOk && forgotOk && helpOk) {
             log('✅ تم تهيئة جميع أزرار تسجيل الدخول بنجاح');
             return true;
         }
@@ -587,16 +414,10 @@ Yasser.diab@icapp.com.eg`;
         retryCount++;
     }, 1000);
 
-    // التأكد من أن زر إعداد المزامنة يعمل حتى بعد تحميل الصفحة بالكامل
+    // التأكد من تفعيل محدد اللغة
     window.addEventListener('load', function() {
-        log('📄 تم تحميل الصفحة بالكامل - محاولة تفعيل زر إعداد المزامنة...');
         setTimeout(function() {
-            const result = setupSyncSettingsButton();
-            if (result) {
-                log('✅ تم تفعيل زر إعداد المزامنة بعد تحميل الصفحة');
-            } else {
-                log('⚠️ فشل تفعيل زر إعداد المزامنة بعد تحميل الصفحة - الزر غير موجود؟');
-            }
+            setupLanguageSelector();
         }, 500);
     });
 })();
@@ -712,36 +533,6 @@ Yasser.diab@icapp.com.eg`;
                         }
                     }, true);
                     helpBtn.dataset.handlerBound = 'true';
-                }
-            }
-
-            // Sync settings button
-            const syncSettingsBtn = newForm.querySelector('#sync-settings-btn');
-            if (syncSettingsBtn) {
-                if (syncSettingsBtn.dataset.handlerBound !== 'true') {
-                    syncSettingsBtn.addEventListener('click', function (e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.stopImmediatePropagation();
-                        
-                        log('🖱️ تم النقر على زر إعداد المزامنة (من form clone)');
-                        
-                        try {
-                            // استخدام window.LoginSyncSetup مباشرة
-                            if (typeof window !== 'undefined' && window.LoginSyncSetup && typeof window.LoginSyncSetup.open === 'function') {
-                                log('✅ فتح نافذة إعداد المزامنة...');
-                                window.LoginSyncSetup.open();
-                            } else {
-                                log('❌ LoginSyncSetup غير متاح');
-                                throw new Error('LoginSyncSetup غير متاح بعد. انتظر قليلاً ثم حاول مرة أخرى.');
-                            }
-                        } catch (err) {
-                            console.error('❌ خطأ في فتح نافذة إعداد المزامنة:', err);
-                            alert('تعذر فتح نافذة إعداد المزامنة. يرجى تحديث الصفحة.\n\n' + (err?.message || ''));
-                        }
-                    }, true);
-                    syncSettingsBtn.dataset.handlerBound = 'true';
-                    log('✅ تم ربط زر إعداد المزامنة في form clone');
                 }
             }
         })();
