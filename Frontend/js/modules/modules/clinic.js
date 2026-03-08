@@ -161,43 +161,44 @@ const Clinic = {
     },
 
     getClinicDefaultAnalysisCards() {
+        const { t } = this.getTranslations();
         return [
             {
                 id: 'card_total_visits',
-                title: 'إجمالي الزيارات',
+                title: t('analysis.totalVisits') || 'إجمالي الزيارات',
                 icon: 'fas fa-hospital-user',
                 color: 'blue',
-                description: 'إجمالي عدد زيارات العيادة المسجلة',
+                description: t('analysis.totalVisitsDesc') || 'إجمالي عدد زيارات العيادة المسجلة',
                 enabled: true,
                 mode: 'metric',
                 metric: 'totalVisits'
             },
             {
                 id: 'card_total_dispensed_qty',
-                title: 'إجمالي المنصرف',
+                title: t('analysis.totalDispensed') || 'إجمالي المنصرف',
                 icon: 'fas fa-prescription-bottle-alt',
                 color: 'green',
-                description: 'إجمالي الكمية المصروفة من الأدوية عبر الزيارات',
+                description: t('analysis.totalDispensedDesc') || 'إجمالي الكمية المصروفة من الأدوية عبر الزيارات',
                 enabled: true,
                 mode: 'metric',
                 metric: 'totalDispensedQty'
             },
             {
                 id: 'card_expired_meds',
-                title: 'أدوية منتهية',
+                title: t('analysis.expiredMeds') || 'أدوية منتهية',
                 icon: 'fas fa-exclamation-triangle',
                 color: 'red',
-                description: 'عدد الأدوية المنتهية الصلاحية',
+                description: t('analysis.expiredMedsDesc') || 'عدد الأدوية المنتهية الصلاحية',
                 enabled: true,
                 mode: 'metric',
                 metric: 'expiredMedications'
             },
             {
                 id: 'card_low_stock',
-                title: 'مخزون منخفض',
+                title: t('analysis.lowStock') || 'مخزون منخفض',
                 icon: 'fas fa-box-open',
                 color: 'orange',
-                description: 'عدد الأدوية ذات الرصيد المنخفض (≤ 10)',
+                description: t('analysis.lowStockDesc') || 'عدد الأدوية ذات الرصيد المنخفض (≤ 10)',
                 enabled: true,
                 mode: 'metric',
                 metric: 'lowStockMedications'
@@ -206,15 +207,16 @@ const Clinic = {
     },
 
     getClinicDefaultAnalysisItems() {
+        const { t } = this.getTranslations();
         return [
-            { id: 'visits_by_reason', label: 'زيارات حسب سبب الزيارة', enabled: true, dataset: 'visits', field: 'reason', chartType: 'auto' },
-            { id: 'visits_by_personType', label: 'زيارات حسب النوع (موظف/مقاول/خارجي)', enabled: true, dataset: 'visits', field: 'personType', chartType: 'auto' },
-            { id: 'visits_by_factory', label: 'زيارات حسب المصنع', enabled: false, dataset: 'visits', field: 'factoryName', chartType: 'bar' },
-            { id: 'meds_by_status', label: 'الأدوية حسب الحالة', enabled: true, dataset: 'medications', field: 'status', chartType: 'doughnut' },
-            { id: 'meds_by_type', label: 'الأدوية حسب النوع', enabled: false, dataset: 'medications', field: 'type', chartType: 'bar' },
-            { id: 'injuries_by_type', label: 'الإصابات حسب النوع', enabled: false, dataset: 'injuries', field: 'injuryType', chartType: 'bar' },
-            { id: 'sickleave_by_status', label: 'الإجازات المرضية حسب الحالة', enabled: false, dataset: 'sickLeave', field: 'status', chartType: 'doughnut' },
-            { id: 'supply_by_status', label: 'طلبات الاحتياجات حسب الحالة', enabled: false, dataset: 'supplyRequests', field: 'status', chartType: 'doughnut' }
+            { id: 'visits_by_reason', label: t('analysis.visitsByReason') || 'زيارات حسب سبب الزيارة', enabled: true, dataset: 'visits', field: 'reason', chartType: 'auto' },
+            { id: 'visits_by_personType', label: t('analysis.visitsByPersonType') || 'زيارات حسب النوع (موظف/مقاول/خارجي)', enabled: true, dataset: 'visits', field: 'personType', chartType: 'auto' },
+            { id: 'visits_by_factory', label: t('analysis.visitsByFactory') || 'زيارات حسب المصنع', enabled: false, dataset: 'visits', field: 'factoryName', chartType: 'bar' },
+            { id: 'meds_by_status', label: t('analysis.medsByStatus') || 'الأدوية حسب الحالة', enabled: true, dataset: 'medications', field: 'status', chartType: 'doughnut' },
+            { id: 'meds_by_type', label: t('analysis.medsByType') || 'الأدوية حسب النوع', enabled: false, dataset: 'medications', field: 'type', chartType: 'bar' },
+            { id: 'injuries_by_type', label: t('analysis.injuriesByType') || 'الإصابات حسب النوع', enabled: false, dataset: 'injuries', field: 'injuryType', chartType: 'bar' },
+            { id: 'sickleave_by_status', label: t('analysis.sickLeaveByStatus') || 'الإجازات المرضية حسب الحالة', enabled: false, dataset: 'sickLeave', field: 'status', chartType: 'doughnut' },
+            { id: 'supply_by_status', label: t('analysis.supplyByStatus') || 'طلبات الاحتياجات حسب الحالة', enabled: false, dataset: 'supplyRequests', field: 'status', chartType: 'doughnut' }
         ];
     },
 
