@@ -52,7 +52,7 @@ function loadModule(moduleName) {
         const basePath = 'js/modules/modules/';
         const moduleVersion = (typeof window !== 'undefined' && window.APP_MODULES_VERSION)
             ? String(window.APP_MODULES_VERSION)
-            : '20260307-2';
+            : '20260308-1';
         const log = (typeof Utils !== 'undefined' && Utils.safeLog) ? Utils.safeLog : console.log;
         const logError = (typeof Utils !== 'undefined' && Utils.safeError) ? Utils.safeError : console.error;
 
@@ -224,6 +224,33 @@ function loadModule(moduleName) {
 }
 
 /**
+ * تحميل I18n Manager
+ */
+function loadI18nManager() {
+    return new Promise((resolve) => {
+        const basePath = 'js/modules/';
+        const moduleVersion = (typeof window !== 'undefined' && window.APP_MODULES_VERSION)
+            ? String(window.APP_MODULES_VERSION)
+            : '20260308-1';
+            
+        const script = document.createElement('script');
+        script.src = `${basePath}i18n-manager.js?v=${encodeURIComponent(moduleVersion)}`;
+        script.async = false;
+        script.defer = true;
+        
+        script.onload = () => {
+            console.log('✅ تم تحميل I18n Manager');
+            resolve();
+        };
+        script.onerror = () => {
+            console.error('❌ فشل تحميل I18n Manager');
+            resolve(); // Resolve anyway to not block app
+        };
+        document.head.appendChild(script);
+    });
+}
+
+/**
  * تحميل جميع الموديولات
  */
 async function loadAllModules() {
@@ -231,6 +258,9 @@ async function loadAllModules() {
     const logError = (typeof Utils !== 'undefined' && Utils.safeError) ? Utils.safeError : console.error;
 
     try {
+        // تحميل I18n Manager أولاً
+        await loadI18nManager();
+        
         // التأكد من تحميل Utils و AppState أولاً
         let utilsReady = typeof Utils !== 'undefined';
         let appStateReady = typeof AppState !== 'undefined';

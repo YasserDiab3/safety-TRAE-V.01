@@ -4,6 +4,41 @@
  */
 // ===== Incidents Module (الحوادث) =====
 const Incidents = {
+    /**
+     * الحصول على اللغة الحالية
+     */
+    getCurrentLanguage() {
+        return localStorage.getItem('language') || (typeof AppState !== 'undefined' && AppState.currentLanguage) || 'ar';
+    },
+
+    /**
+     * الترجمة
+     */
+    t(key) {
+        const lang = this.getCurrentLanguage();
+        const translations = {
+            ar: {
+                'title.incidentsManagement': 'إدارة الحوادث',
+                'subtitle.incidentsManagement': 'تسجيل ومتابعة حوادث السلامة المهنية',
+                'btn.reportIncident': 'إخطار عن حادث',
+                'btn.investigate': 'التحقيق في الحادث',
+                'tab.registry': 'سجل الحوادث',
+                'tab.detailedLog': 'سجل الحوادث التفصيلي',
+                'tab.incidentsList': 'قائمة الحوادث'
+            },
+            en: {
+                'title.incidentsManagement': 'Incidents Management',
+                'subtitle.incidentsManagement': 'Register and track occupational safety incidents',
+                'btn.reportIncident': 'Report Incident',
+                'btn.investigate': 'Investigate Incident',
+                'tab.registry': 'Incidents Registry',
+                'tab.detailedLog': 'Detailed Log',
+                'tab.incidentsList': 'Incidents List'
+            }
+        };
+        return translations[lang]?.[key] || key;
+    },
+
     currentEditId: null,
     currentAttachments: [],
     reportPreviewModalId: 'incident-report-preview-modal',
@@ -712,18 +747,18 @@ const Incidents = {
                         <div>
                             <h1 class="section-title">
                                 <i class="fas fa-exclamation-triangle ml-3"></i>
-                                إدارة الحوادث
+                                ${this.t('title.incidentsManagement')}
                             </h1>
-                            <p class="section-subtitle">تسجيل ومتابعة حوادث السلامة المهنية</p>
+                            <p class="section-subtitle">${this.t('subtitle.incidentsManagement')}</p>
                         </div>
                         <div class="flex items-center gap-2">
                             <button id="add-incident-notification-btn" class="btn-secondary">
                                 <i class="fas fa-bell ml-2"></i>
-                                إخطار عن حادث
+                                ${this.t('btn.reportIncident')}
                             </button>
                             <button id="open-investigation-form-btn" class="btn-primary">
                                 <i class="fas fa-search ml-2"></i>
-                                التحقيق في الحادث
+                                ${this.t('btn.investigate')}
                             </button>
                         </div>
                     </div>
@@ -10903,3 +10938,13 @@ const Incidents = {
         }
     }
 })();
+// ???????? ?????? ?????
+window.addEventListener('languageChanged', function(e) {
+    if (typeof Incidents !== 'undefined' && typeof Incidents.load === 'function') {
+        const section = document.getElementById('incidents-section');
+        if (section && section.offsetParent !== null) {
+             Incidents.load();
+        }
+    }
+});
+

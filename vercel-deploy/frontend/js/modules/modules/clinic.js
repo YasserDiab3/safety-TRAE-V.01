@@ -13101,3 +13101,14 @@ if (typeof window !== 'undefined' && typeof Clinic !== 'undefined') { window.Cli
         }
     }
 })();
+
+// ???????? ?????? ?????
+window.addEventListener('languageChanged', function(e) {
+    if (typeof Clinic !== 'undefined' && typeof Clinic.load === 'function') {
+        const section = document.getElementById('clinic-section');
+        if (section && section.offsetParent !== null) {
+             Clinic.load();
+        }
+    }
+});
+
