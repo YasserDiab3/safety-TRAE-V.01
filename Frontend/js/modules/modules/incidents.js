@@ -807,58 +807,92 @@ const Incidents = {
     },
 
     async renderMainView() {
+        // التأكد من أن الترجمة متاحة
+        const t = (key) => {
+            if (typeof I18n !== 'undefined' && I18n.t) {
+                return I18n.t(key);
+            }
+            return this.t ? this.t(key) : key;
+        };
+
         // الحصول على التبويبات المسموح بها للمستخدم
         const allowedTabs = this.getAllowedTabs();
+        
+        // بناء أزرار التبويبات بناءً على الصلاحيات
+        let tabsHtml = '';
+        
+        if (allowedTabs.includes('registry')) {
+            tabsHtml += `
+                <button class="tab-btn active" data-tab="registry" onclick="Incidents.switchTab('registry')">
+                    <i class="fas fa-clipboard-list ml-2 rtl:ml-2 ltr:mr-2"></i>
+                    ${t('incidents.tab.registry') || 'سجل الحوادث'}
+                </button>
+            `;
+        }
+        
+        if (allowedTabs.includes('detailed-log')) {
+            tabsHtml += `
+                <button class="tab-btn" data-tab="detailed-log" onclick="Incidents.switchTab('detailed-log')">
+                    <i class="fas fa-file-alt ml-2 rtl:ml-2 ltr:mr-2"></i>
+                    ${t('incidents.tab.detailedLog') || 'سجل الحوادث التفصيلي'}
+                </button>
+            `;
+        }
+        
+        if (allowedTabs.includes('incidents-list')) {
+            tabsHtml += `
+                <button class="tab-btn" data-tab="incidents-list" onclick="Incidents.switchTab('incidents-list')">
+                    <i class="fas fa-list ml-2 rtl:ml-2 ltr:mr-2"></i>
+                    ${t('incidents.tab.list') || 'قائمة الحوادث'}
+                </button>
+            `;
+        }
+        
+        if (allowedTabs.includes('annual-log')) {
+            tabsHtml += `
+                <button class="tab-btn" data-tab="annual-log" onclick="Incidents.switchTab('annual-log')">
+                    <i class="fas fa-calendar-alt ml-2 rtl:ml-2 ltr:mr-2"></i>
+                    ${t('incidents.tab.annualLog') || 'سجل الحوادث السنوي'}
+                </button>
+            `;
+        }
+        
+        if (allowedTabs.includes('analysis')) {
+            tabsHtml += `
+                <button class="tab-btn" data-tab="analysis" onclick="Incidents.switchTab('analysis')">
+                    <i class="fas fa-chart-line ml-2 rtl:ml-2 ltr:mr-2"></i>
+                    ${t('incidents.tab.analysis') || 'تحليل الحوادث'}
+                </button>
+            `;
+        }
+        
+        if (allowedTabs.includes('approvals')) {
+            tabsHtml += `
+                <button class="tab-btn" data-tab="approvals" onclick="Incidents.switchTab('approvals')">
+                    <i class="fas fa-check-circle ml-2 rtl:ml-2 ltr:mr-2"></i>
+                    ${t('incidents.tab.approvals') || 'الموافقات'}
+                    <span id="incidents-approval-badge" class="badge badge-danger hidden ml-1 rtl:ml-1 ltr:mr-1">0</span>
+                </button>
+            `;
+        }
+        
+        if (allowedTabs.includes('safety-alerts')) {
+            tabsHtml += `
+                <button class="tab-btn" data-tab="safety-alerts" onclick="Incidents.switchTab('safety-alerts')">
+                    <i class="fas fa-bullhorn ml-2 rtl:ml-2 ltr:mr-2"></i>
+                    ${t('incidents.tab.safetyAlerts') || 'Safety Alerts'}
+                </button>
+            `;
+        }
 
         return `
-            <div class="tabs-container">
-                <div class="tabs-nav">
-                    ${allowedTabs.includes('registry') ? `
-                    <button class="tab-btn active" data-tab="registry" onclick="Incidents.switchTab('registry')">
-                        <i class="fas fa-clipboard-list"></i>
-                        سجل الحوادث
-                    </button>
-                    ` : ''}
-                    ${allowedTabs.includes('detailed-log') ? `
-                    <button class="tab-btn ${allowedTabs.includes('registry') ? '' : 'active'}" data-tab="detailed-log" onclick="Incidents.switchTab('detailed-log')">
-                        <i class="fas fa-clipboard-list"></i>
-                        سجل الحوادث التفصيلي
-                    </button>
-                    ` : ''}
-                    ${allowedTabs.includes('incidents-list') ? `
-                    <button class="tab-btn ${!allowedTabs.includes('registry') && !allowedTabs.includes('detailed-log') ? 'active' : ''}" data-tab="incidents-list" onclick="Incidents.switchTab('incidents-list')">
-                        <i class="fas fa-list"></i>
-                        قائمة الحوادث
-                    </button>
-                    ` : ''}
-                    ${allowedTabs.includes('annual-log') ? `
-                    <button class="tab-btn" data-tab="annual-log" onclick="Incidents.switchTab('annual-log')">
-                        <i class="fas fa-calendar-alt"></i>
-                        سجل الحوادث السنوي
-                    </button>
-                    ` : ''}
-                    ${allowedTabs.includes('analysis') ? `
-                    <button class="tab-btn" data-tab="analysis" onclick="Incidents.switchTab('analysis')">
-                        <i class="fas fa-chart-line"></i>
-                        تحليل الحوادث
-                    </button>
-                    ` : ''}
-                    ${allowedTabs.includes('approvals') ? `
-                    <button class="tab-btn" data-tab="approvals" onclick="Incidents.switchTab('approvals')">
-                        <i class="fas fa-check-circle"></i>
-                        الموافقات
-                    </button>
-                    ` : ''}
-                    ${allowedTabs.includes('safety-alerts') ? `
-                    <button class="tab-btn" data-tab="safety-alerts" onclick="Incidents.switchTab('safety-alerts')">
-                        <i class="fas fa-exclamation-triangle"></i>
-                        التنبيه عن حادث
-                    </button>
-                    ` : ''}
+            <div class="tabs-container mb-6">
+                <div class="tabs-header">
+                    ${tabsHtml}
                 </div>
-            </div>
-            <div id="incidents-tab-content" class="mt-6">
-                ${await this.renderTabContent(allowedTabs[0] || 'incidents-list')}
+                <div id="incidents-tab-content" class="tab-content mt-6">
+                    ${await this.renderTabContent(allowedTabs[0] || 'incidents-list')}
+                </div>
             </div>
         `;
     },

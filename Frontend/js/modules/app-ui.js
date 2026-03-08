@@ -7999,11 +7999,15 @@ window.UI = {
                 sidebar.style.left = 'auto';
                 sidebar.style.borderLeft = '3px solid #FFC72C';
                 sidebar.style.borderRight = 'none';
+                sidebar.classList.remove('sidebar-ltr');
+                sidebar.classList.add('sidebar-rtl');
             } else {
                 sidebar.style.left = '0';
                 sidebar.style.right = 'auto';
                 sidebar.style.borderRight = '3px solid #FFC72C';
                 sidebar.style.borderLeft = 'none';
+                sidebar.classList.remove('sidebar-rtl');
+                sidebar.classList.add('sidebar-ltr');
             }
         }
 
@@ -8197,7 +8201,12 @@ window.UI = {
                 'nav.aiAssistant': 'مساعد الذكاء الاصطناعي',
                 'nav.appTester': 'اختبار التطبيق',
                 'nav.settings': 'الإعدادات',
-                'nav.logout': 'تسجيل الخروج'
+                'nav.logout': 'تسجيل الخروج',
+                'user_menu.profile': 'الملف الشخصي',
+                'user_menu.status': 'الحالة',
+                'user_menu.active': 'نشط',
+                'user_menu.notifications': 'الإشعارات',
+                'user_menu.sync': 'مزامنة'
             },
             en: {
                 'nav.dashboard': 'Dashboard',
@@ -8265,7 +8274,12 @@ window.UI = {
                 'nav.aiAssistant': 'AI Assistant',
                 'nav.appTester': 'Application Testing',
                 'nav.settings': 'Settings',
-                'nav.logout': 'Logout'
+                'nav.logout': 'Logout',
+                'user_menu.profile': 'Profile',
+                'user_menu.status': 'Status',
+                'user_menu.active': 'Active',
+                'user_menu.notifications': 'Notifications',
+                'user_menu.sync': 'Sync'
             }
         };
 
